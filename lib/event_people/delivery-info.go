@@ -1,4 +1,4 @@
-package DeliveryInfo
+package EventPeople
 
 type DeliveryInfo struct {
 	Tag string

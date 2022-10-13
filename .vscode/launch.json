@@ -9,7 +9,7 @@
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/examples/emitter.go"
+      "program": "${workspaceFolder}/examples/daemon.go"
     }
   ]
 }

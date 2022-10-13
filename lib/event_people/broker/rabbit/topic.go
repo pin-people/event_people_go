@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	Config "github.com/pinpeople/event_people_go/lib/event_people"
-	Event "github.com/pinpeople/event_people_go/lib/event_people/event"
-	Utils "github.com/pinpeople/event_people_go/lib/event_people/utils"
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -19,7 +17,7 @@ func (topic *Topic) Init(channel *amqp.Channel) {
 	topic.channel = channel
 }
 
-func (topic *Topic) Produce(event Event.Event) {
+func (topic *Topic) Produce(event EventPeople.Event) {
 	message := amqp.Publishing{
 		DeliveryMode: amqp.Persistent,
 		Timestamp:    time.Now(),
@@ -29,10 +27,10 @@ func (topic *Topic) Produce(event Event.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	fmt.Printf("Producing message to %s!\n", event.Name)
-	err := topic.channel.PublishWithContext(ctx, Config.TOPIC, event.Name, false, false, message)
+	err := topic.channel.PublishWithContext(ctx, EventPeople.Config.TOPIC, event.Name, false, false, message)
 	fmt.Printf("Message to %s sended!\n", event.Name)
 
-	Utils.FailOnError(err, "Error on publish message")
+	EventPeople.FailOnError(err, "Error on publish message")
 }
 
 func (topic *Topic) GetChannel() *amqp.Channel {

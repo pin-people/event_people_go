@@ -1,36 +1,29 @@
 package Broker
 
 import (
-	Config "github.com/pinpeople/event_people_go/lib/event_people"
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
 	RabbitContent "github.com/pinpeople/event_people_go/lib/event_people/broker/rabbit"
-	Callback "github.com/pinpeople/event_people_go/lib/event_people/callback"
-	Event "github.com/pinpeople/event_people_go/lib/event_people/event"
-	Utils "github.com/pinpeople/event_people_go/lib/event_people/utils"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type RabbitMQ struct {
+type RabbitBroker struct {
+	queue       RabbitContent.Queue
+	topic       RabbitContent.Topic
 	connection  *amqp.Connection
 	amqpChannel *amqp.Channel
-}
-
-type RabbitBroker struct {
-	queue RabbitContent.Queue
-	topic RabbitContent.Topic
-	RabbitMQ
-	AbstractBase
+	*EventPeople.BaseBroker
 }
 
 func (rabbit *RabbitBroker) Init() {
-	connection, err := amqp.Dial(Config.FULL_URL)
-	Utils.FailOnError(err, "Failed to connect to RabbitMQ")
+	connection, err := amqp.Dial(EventPeople.Config.FULL_URL)
+	EventPeople.FailOnError(err, "Failed to connect to RabbitMQ")
 	rabbit.connection = connection
 	rabbit.topic = RabbitContent.Topic{}
 }
 
-func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
-	return *rabbit.connection
-}
+// func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
+// 	return *rabbit.connection
+// }
 
 func (rabbit *RabbitBroker) GetConsumers() int {
 	return rabbit.queue.GetConsumers()
@@ -38,12 +31,12 @@ func (rabbit *RabbitBroker) GetConsumers() int {
 
 func (rabbit *RabbitBroker) Channel() {
 	channel, err := rabbit.connection.Channel()
-	Utils.FailOnError(err, "Failed to open a channel")
+	EventPeople.FailOnError(err, "Failed to open a channel")
 	rabbit.amqpChannel = channel
 	rabbit.topic.Init(rabbit.amqpChannel)
 }
 
-func (rabbit *RabbitBroker) Consume(eventName string, callback Callback.Callback) {
+func (rabbit *RabbitBroker) Consume(eventName string, callback EventPeople.Callback) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -55,7 +48,7 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback.Callback
 	rabbit.queue.SubscribeWithChannel(rabbit.amqpChannel, eventName, callback)
 }
 
-func (rabbit *RabbitBroker) Produce(event Event.Event) {
+func (rabbit *RabbitBroker) Produce(event EventPeople.Event) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -67,7 +60,7 @@ func (rabbit *RabbitBroker) Produce(event Event.Event) {
 }
 
 func (rabbit *RabbitBroker) RabbitURL() string {
-	return Config.FULL_URL
+	return EventPeople.Config.FULL_URL
 }
 
 func (rabbit *RabbitBroker) CloseConnection() {

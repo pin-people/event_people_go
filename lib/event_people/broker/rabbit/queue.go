@@ -5,21 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	Config "github.com/pinpeople/event_people_go/lib/event_people"
-
-	Callback "github.com/pinpeople/event_people_go/lib/event_people/callback"
-	Context "github.com/pinpeople/event_people_go/lib/event_people/context"
-	ContextEvent "github.com/pinpeople/event_people_go/lib/event_people/context-event"
-	DeliveryInfo "github.com/pinpeople/event_people_go/lib/event_people/delivery-info"
-	Event "github.com/pinpeople/event_people_go/lib/event_people/event"
-	Utils "github.com/pinpeople/event_people_go/lib/event_people/utils"
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type QueueInterface interface {
-	Subscribe(routingKey string, callback Callback.Callback)
-	SubscribeWithChannel(channel Context.ContextInterface, routingKey string, callback Callback.Callback)
-	Init(channel Context.ContextInterface)
+	Subscribe(routingKey string, callback EventPeople.Callback)
+	SubscribeWithChannel(channel EventPeople.ContextInterface, routingKey string, callback EventPeople.Callback)
+	Init(channel EventPeople.ContextInterface)
 	QueueOptions()
 	QueueName(routingKey string)
 	queueBind()
@@ -38,26 +31,20 @@ func (queue *Queue) Init(channel *amqp.Channel) {
 	queue.channel = channel
 }
 
-func (queue *Queue) Subscribe(routingKey string, callback Callback.Callback) {
+func (queue *Queue) Subscribe(routingKey string, callback EventPeople.Callback) {
 	routingKeySplited := strings.Split(routingKey, ".")
 	if len(routingKeySplited) == 3 {
-		queue.createQueueAndBind(Config.APP_NAME+"-"+routingKey+".all", callback)
-		queue.createQueueAndBind(Config.APP_NAME+"-"+routingKey+"."+Config.APP_NAME, callback)
+		queue.createQueueAndBind(EventPeople.Config.APP_NAME+"-"+routingKey+".all", callback)
+		queue.createQueueAndBind(EventPeople.Config.APP_NAME+"-"+routingKey+"."+EventPeople.Config.APP_NAME, callback)
 	} else {
-		queue.createQueueAndBind(Config.APP_NAME+"-"+routingKey, callback)
+		queue.createQueueAndBind(EventPeople.Config.APP_NAME+"-"+routingKey, callback)
 	}
 }
 
-func (queue *Queue) SubscribeWithChannel(channel *amqp.Channel, routingKey string, callback Callback.Callback) {
+func (queue *Queue) SubscribeWithChannel(channel *amqp.Channel, routingKey string, callback EventPeople.Callback) {
 	queue.channel = channel
 
-	routingKeySplited := strings.Split(routingKey, ".")
-	if len(routingKeySplited) == 3 {
-		queue.createQueueAndBind(routingKey+".all", callback)
-		queue.createQueueAndBind(routingKey+"."+Config.APP_NAME, callback)
-	} else {
-		queue.createQueueAndBind(routingKey, callback)
-	}
+	queue.Subscribe(routingKey, callback)
 }
 
 func (queue *Queue) GetConsumers() int {
@@ -68,44 +55,44 @@ func (queue *Queue) QueueName(routingKey string) string {
 	return queue.amqpQueue.Name
 }
 
-func (queue *Queue) callback(messages <-chan amqp.Delivery, callback Callback.Callback) {
+func (queue *Queue) callback(messages <-chan amqp.Delivery, callback EventPeople.Callback) {
 	for message := range messages {
-		var eventMessage Event.Event
+		var eventMessage EventPeople.Event
 		json.Unmarshal(message.Body, &eventMessage)
 
 		eventMessage.Name = eventMessage.Headers.AppName
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
-		delivery := DeliveryInfo.DeliveryInfo{}
+		delivery := EventPeople.DeliveryInfo{}
 		delivery.Tag = string(message.ConsumerTag)
 
-		listener := ContextEvent.BaseContextEvent{}
+		listener := new(EventPeople.BaseListener)
 		listener.Initialize(message, delivery)
 
-		callback(eventMessage, listener)
+		callback(eventMessage, *listener)
 	}
 }
 
 func (queue *Queue) queueBind(routingKey string) {
 	queuet, err := queue.channel.QueueDeclare(routingKey, true, false, false, false, nil)
-	Utils.FailOnError(err, "Failed to declare a queue")
+	EventPeople.FailOnError(err, "Failed to declare a queue")
 	queue.routingKey = routingKey
 	queue.amqpQueue = &queuet
 }
 
 func (queue *Queue) exchangeBind() {
-	err := queue.channel.ExchangeDeclare(Config.TOPIC, "topic", true, false, false, false, nil)
-	Utils.FailOnError(err, "Failed to declare an exchange")
+	err := queue.channel.ExchangeDeclare(EventPeople.Config.TOPIC, "topic", true, false, false, false, nil)
+	EventPeople.FailOnError(err, "Failed to declare an exchange")
 
-	queue.channel.QueueBind(queue.routingKey, queue.routingKey, Config.TOPIC, false, nil)
-	Utils.FailOnError(err, "Failed to bind queue to exchange")
+	queue.channel.QueueBind(queue.routingKey, queue.routingKey, EventPeople.Config.TOPIC, false, nil)
+	EventPeople.FailOnError(err, "Failed to bind queue to exchange")
 }
 
-func (queue *Queue) createQueueAndBind(eventName string, callback Callback.Callback) {
+func (queue *Queue) createQueueAndBind(eventName string, callback EventPeople.Callback) {
 	queue.queueBind(eventName)
 	queue.exchangeBind()
-	messages, err := queue.channel.Consume(eventName, Config.APP_NAME+"-"+eventName+"-"+Config.APP_NAME, false, false, false, false, nil)
-	Utils.FailOnError(err, "Failed to consume a queue")
+	messages, err := queue.channel.Consume(eventName, EventPeople.Config.APP_NAME+"-"+eventName+"-"+EventPeople.Config.APP_NAME, false, false, false, false, nil)
+	EventPeople.FailOnError(err, "Failed to consume a queue")
 	go queue.callback(messages, callback)
 	fmt.Printf("Event People consuming %s Queue!\n", queue.amqpQueue.Name)
 }

@@ -4,16 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	Config "github.com/pinpeople/event_people_go/lib/event_people"
-	ContextEvent "github.com/pinpeople/event_people_go/lib/event_people/context-event"
-	Event "github.com/pinpeople/event_people_go/lib/event_people/event"
-	Listener "github.com/pinpeople/event_people_go/lib/event_people/listener"
-	Utils "github.com/pinpeople/event_people_go/lib/event_people/utils"
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
+	Broker "github.com/pinpeople/event_people_go/lib/event_people/broker"
 )
 
-func defaultCallback(event Event.Event, context ContextEvent.BaseContextEvent) {
+func defaultCallback(event EventPeople.Event, context EventPeople.BaseListener) {
 	msg, err := json.Marshal(event.Body)
-	Utils.FailOnError(err, "Error on received event")
+	EventPeople.FailOnError(err, "Error on received event")
 	fmt.Println(
 		fmt.Sprintf("EventName: %s \nBody: %s", event.GetRoutingKey(), string(msg)),
 	)
@@ -21,11 +18,10 @@ func defaultCallback(event Event.Event, context ContextEvent.BaseContextEvent) {
 }
 
 func RunListener() {
-	var forever chan struct{}
-	Config.ConfigEnvs()
-	new(Listener.Listener).On("resource.custom.*", defaultCallback)
-	new(Listener.Listener).On("resource.origin.*", defaultCallback)
-	<-forever
+	EventPeople.ConfigEnvs()
+	EventPeople.Config.InitBroker(new(Broker.RabbitBroker))
+	new(EventPeople.Listener).On("resource.custom.*", defaultCallback)
+	new(EventPeople.Listener).On("resource.origin.*", defaultCallback)
 }
 
 // func main() {

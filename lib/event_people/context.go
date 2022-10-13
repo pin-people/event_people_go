@@ -1,4 +1,4 @@
-package Context
+package EventPeople
 
 type ContextInterface interface {
 	Ack(multiple bool) error

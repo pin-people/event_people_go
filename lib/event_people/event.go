@@ -1,12 +1,9 @@
-package Event
+package EventPeople
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	Config "github.com/pinpeople/event_people_go/lib/event_people"
-	Utils "github.com/pinpeople/event_people_go/lib/event_people/utils"
 )
 
 type Headers struct {
@@ -39,7 +36,7 @@ func (event *Event) Initialize(name string, body any, schemaVersion ...float64) 
 		event.Body = fmt.Sprintf("%v", body)
 	default:
 		jsonBody, err := json.Marshal(body)
-		Utils.FailOnError(err, "Error getting body event")
+		FailOnError(err, "Error getting body event")
 		event.Body = string(jsonBody)
 	}
 
@@ -59,7 +56,7 @@ func (event *Event) Payload() string {
 	}
 
 	jsonBody, err := json.Marshal(payload)
-	Utils.FailOnError(err, "Error getting body event")
+	FailOnError(err, "Error getting body event")
 	return string(jsonBody)
 }
 
