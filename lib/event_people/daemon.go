@@ -12,3 +12,7 @@ func (d *Daemon) Start() {
 func (d *Daemon) Stop() {
 	Config.Broker.CloseConnection()
 }
+
+func NewDaemon() *Daemon {
+	return new(Daemon)
+}

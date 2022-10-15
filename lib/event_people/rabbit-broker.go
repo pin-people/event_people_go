@@ -1,29 +1,30 @@
-package Broker
+package EventPeople
 
 import (
-	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
-	RabbitContent "github.com/pinpeople/event_people_go/lib/event_people/broker/rabbit"
+	"fmt"
+	"os"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type RabbitBroker struct {
-	queue       RabbitContent.Queue
-	topic       RabbitContent.Topic
+	queue       Queue
+	topic       Topic
 	connection  *amqp.Connection
 	amqpChannel *amqp.Channel
-	*EventPeople.BaseBroker
+	*BaseBroker
 }
 
 func (rabbit *RabbitBroker) Init() {
-	connection, err := amqp.Dial(EventPeople.Config.FULL_URL)
-	EventPeople.FailOnError(err, "Failed to connect to RabbitMQ")
+	connection, err := amqp.Dial(rabbit.RabbitURL())
+	FailOnError(err, "Failed to connect to RabbitMQ")
 	rabbit.connection = connection
-	rabbit.topic = RabbitContent.Topic{}
+	rabbit.topic = Topic{}
 }
 
-// func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
-// 	return *rabbit.connection
-// }
+func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
+	return *rabbit.connection
+}
 
 func (rabbit *RabbitBroker) GetConsumers() int {
 	return rabbit.queue.GetConsumers()
@@ -31,12 +32,12 @@ func (rabbit *RabbitBroker) GetConsumers() int {
 
 func (rabbit *RabbitBroker) Channel() {
 	channel, err := rabbit.connection.Channel()
-	EventPeople.FailOnError(err, "Failed to open a channel")
+	FailOnError(err, "Failed to open a channel")
 	rabbit.amqpChannel = channel
 	rabbit.topic.Init(rabbit.amqpChannel)
 }
 
-func (rabbit *RabbitBroker) Consume(eventName string, callback EventPeople.Callback) {
+func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -44,11 +45,11 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback EventPeople.Callb
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = RabbitContent.Queue{}
+	rabbit.queue = Queue{}
 	rabbit.queue.SubscribeWithChannel(rabbit.amqpChannel, eventName, callback)
 }
 
-func (rabbit *RabbitBroker) Produce(event EventPeople.Event) {
+func (rabbit *RabbitBroker) Produce(event Event) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -60,7 +61,7 @@ func (rabbit *RabbitBroker) Produce(event EventPeople.Event) {
 }
 
 func (rabbit *RabbitBroker) RabbitURL() string {
-	return EventPeople.Config.FULL_URL
+	return fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST"))
 }
 
 func (rabbit *RabbitBroker) CloseConnection() {

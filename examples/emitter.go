@@ -1,12 +1,21 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"fmt"
+	"os"
 
 	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
-	Broker "github.com/pinpeople/event_people_go/lib/event_people/broker"
 )
+
+func init() {
+	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
+	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
+	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
+	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
+	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
+
+	EventPeople.Config.Init()
+}
 
 type BodyStructureEmmiter struct {
 	Amount int    `json:"amount"`
@@ -17,61 +26,31 @@ type PrivateMessageEmitter struct {
 	Message string `json:"message"`
 }
 
-func RunEmitter() {
-	EventPeople.Config.InitBroker(new(Broker.RabbitBroker))
+type SecondPrivateMessageEmitter struct {
+	Bo string `json:"bo"`
+	Dy string `json:"dy"`
+}
 
+func RunEmitter() {
 	var events []*EventPeople.Event
 
-	firstBody, err := json.Marshal(BodyStructureEmmiter{Amount: 1500, Name: "John"})
+	events = append(events, EventPeople.NewEvent("resource.custom.pay", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 1500, Name: "John"})))
 
-	EventPeople.FailOnError(err, "error on create body")
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 35, Name: "Peter"})))
 
-	firstItem := new(EventPeople.Event)
-	firstItem.Initialize("service-resource.custom.pay", bytes.NewBuffer(firstBody).String())
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 350, Name: "George"})))
 
-	events = append(events, firstItem)
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 550, Name: "James"})))
 
-	secondBody, err := json.Marshal(BodyStructureEmmiter{Amount: 35, Name: "Peter"})
-	EventPeople.FailOnError(err, "error on create body")
+	events = append(events, EventPeople.NewEvent("resource.custom.private.service", EventPeople.StructToJsonString(PrivateMessageEmitter{Message: "Secret"})))
 
-	secondItem := new(EventPeople.Event)
-	secondItem.Initialize("service-resource.custom.receive", bytes.NewBuffer(secondBody).String())
+	EventPeople.NewEmitter().Trigger(events)
 
-	events = append(events, secondItem)
+	singleEvent := EventPeople.NewEvent("resource.origin.action", EventPeople.StructToJsonString(SecondPrivateMessageEmitter{Bo: "teste bo", Dy: "teste dy"}))
 
-	thirdBody, err := json.Marshal(BodyStructureEmmiter{Amount: 350, Name: "George"})
-	EventPeople.FailOnError(err, "error on create body")
+	EventPeople.NewEmitter().Trigger([]*EventPeople.Event{singleEvent})
 
-	thirdItem := new(EventPeople.Event)
-	thirdItem.Initialize("service-resource.custom.receive", bytes.NewBuffer(thirdBody).String())
-
-	events = append(events, thirdItem)
-
-	fourthBody, err := json.Marshal(BodyStructureEmmiter{Amount: 550, Name: "James"})
-	EventPeople.FailOnError(err, "error on create body")
-
-	fourthItem := new(EventPeople.Event)
-	fourthItem.Initialize("service-resource.custom.receive", bytes.NewBuffer(fourthBody).String())
-
-	events = append(events, fourthItem)
-
-	singleBody, err := json.Marshal(PrivateMessageEmitter{Message: "Secret"})
-	EventPeople.FailOnError(err, "error on create body")
-
-	singleItem := new(EventPeople.Event)
-	singleItem.Initialize("service-resource.custom.private.service", bytes.NewBuffer(singleBody).String())
-
-	events = append(events, singleItem)
-
-	actionBody, err := json.Marshal(BodyStructureEmmiter{Amount: 30, Name: "Willian"})
-	EventPeople.FailOnError(err, "error on create body")
-
-	actionItem := new(EventPeople.Event)
-	actionItem.Initialize("service-resource.origin.action", bytes.NewBuffer(actionBody).String())
-
-	events = append(events, actionItem)
-
-	new(EventPeople.Emitter).Trigger(events)
+	EventPeople.Config.CloseConnection()
 }
 
 func main() {

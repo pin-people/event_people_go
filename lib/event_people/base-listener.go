@@ -1,6 +1,9 @@
 package EventPeople
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
 
 type AbstractBaseListener interface {
 	Initialize(context ContextInterface, deliveryInfo DeliveryInfo)
@@ -43,7 +46,7 @@ func (base *BaseListener) BindEvent(method ManagerMethod, eventName string) {
 	)
 	ListenerManager.Register(
 		ListenerManagerStruct{
-			RoutingKey: base.fixedEventName(eventName, Config.APP_NAME),
+			RoutingKey: base.fixedEventName(eventName, os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")),
 			Method:     method,
 			Listener:   base,
 		},
