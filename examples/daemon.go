@@ -38,7 +38,7 @@ type CustomEventListener struct {
 
 func (custom *CustomEventListener) pay(event EventPeople.Event) {
 	var bodyDaemon = BodyStructureDaemon{}
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
+	err := json.Unmarshal([]byte(event.Body), &bodyDaemon)
 	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
 
 	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetRoutingKey()))
@@ -47,7 +47,7 @@ func (custom *CustomEventListener) pay(event EventPeople.Event) {
 
 func (custom *CustomEventListener) receive(event EventPeople.Event) {
 	var bodyDaemon = BodyStructureDaemon{}
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
+	err := json.Unmarshal([]byte(event.Body), &bodyDaemon)
 	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
 
 	if bodyDaemon.Amount < 500 {
@@ -73,7 +73,7 @@ func (custom *CustomEventListener) secondPrivateChannel(event EventPeople.Event)
 	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
 	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
 
-	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", fmt.Sprintf("bo: %s -> dy: %s", bodyDaemon.Bo, bodyDaemon.Dy), event.GetRoutingKey()))
+	fmt.Println(fmt.Sprintf("[Consumer] 2 Got a private message: %s ~> %s", fmt.Sprintf("bo: %s -> dy: %s", bodyDaemon.Bo, bodyDaemon.Dy), event.GetRoutingKey()))
 	custom.Success()
 }
 

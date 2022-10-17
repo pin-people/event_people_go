@@ -1,6 +1,9 @@
 package EventPeople
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -17,7 +20,7 @@ type Headers struct {
 type Event struct {
 	Name          string  `json:"name"`
 	Headers       Headers `json:"headers"`
-	Body          any     `json:"body"`
+	Body          string  `json:"body"`
 	SchemaVersion float64 `json:"schemaVersion"`
 }
 
@@ -35,7 +38,7 @@ func NewEvent(name string, body any, schemaVersion ...float64) *Event {
 func (event *Event) Initialize(name string, body any, schemaVersion ...float64) {
 	event.Name = name
 	event.SchemaVersion = 1.0
-	event.Body = StructToJsonString(body)
+	event.Body = structToJsonString(body)
 
 	if schemaVersion != nil {
 		event.SchemaVersion = schemaVersion[0]
@@ -51,11 +54,11 @@ func (event *Event) Payload() string {
 	payload := Payload{
 		event.Headers, event.Body,
 	}
-	return StructToJsonString(payload)
+	return structToJsonString(payload)
 }
 
 func (event *Event) HasBody() bool {
-	return event.Body != nil
+	return event.Body != ""
 }
 
 func (event *Event) HasName() bool {
@@ -93,4 +96,19 @@ func (event *Event) fixName() {
 
 func (event *Event) GetRoutingKey() string {
 	return event.Headers.AppName + "-" + event.Headers.Resource + "." + event.Headers.Origin + "." + event.Headers.Action + "." + event.Headers.Destination
+}
+
+func (event *Event) GetStructBody(body any) {
+	json.Unmarshal([]byte(event.Body), &body)
+}
+
+func structToJsonString(object any) string {
+	switch object.(type) {
+	case string:
+		return fmt.Sprintf("%v", object)
+	default:
+		jsonBody, err := json.Marshal(object)
+		FailOnError(err, "Error Marshing object")
+		return bytes.NewBuffer(jsonBody).String()
+	}
 }

@@ -63,13 +63,7 @@ func (queue *Queue) callback(messages <-chan amqp.Delivery, callback Callback) {
 		eventMessage.Name = eventMessage.Headers.AppName
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
-		delivery := DeliveryInfo{}
-		delivery.Tag = string(message.ConsumerTag)
-
-		listener := new(BaseListener)
-		listener.Initialize(message, delivery)
-
-		callback(eventMessage, *listener)
+		callback(eventMessage, *NewBaseListener(message, DeliveryInfo{Tag: string(message.ConsumerTag)}))
 	}
 }
 

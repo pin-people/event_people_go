@@ -19,7 +19,7 @@ func init() {
 }
 
 func listenerCallback(event EventPeople.Event, context EventPeople.BaseListener) {
-	msg := EventPeople.StructToJsonString(event.Body)
+	msg := event.Body
 	fmt.Println(
 		fmt.Sprintf("EventName: %s \nBody: %s", event.Name, msg),
 	)
@@ -45,7 +45,7 @@ func main() {
 	var eventName = "payment.payments.pay.all"
 
 	EventPeople.NewListener().On(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
-		msg := EventPeople.StructToJsonString(event.Body)
+		msg := event.Body
 
 		fmt.Println("")
 		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))

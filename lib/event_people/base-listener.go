@@ -63,3 +63,9 @@ func (base *BaseListener) fixedEventName(eventName string, postfix string) strin
 	eventNameSplited = append(eventNameSplited, postfix)
 	return strings.Join(eventNameSplited, ".")
 }
+
+func NewBaseListener(context ContextInterface, deliveryInfo DeliveryInfo) *BaseListener {
+	listener := new(BaseListener)
+	listener.Initialize(context, deliveryInfo)
+	return listener
+}

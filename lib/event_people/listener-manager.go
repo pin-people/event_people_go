@@ -15,7 +15,8 @@ var ListenerManager = new(manager)
 var ListenerConfigurationsList []ListenerManagerStruct
 
 func (manager manager) BindAllListeners() {
-	for _, listenerItem := range ListenerConfigurationsList {
+	for index := range ListenerConfigurationsList {
+		listenerItem := ListenerConfigurationsList[index]
 		NewListener().On(listenerItem.RoutingKey, func(event Event, listener BaseListener) {
 			listenerItem.Listener.Initialize(listener.context, listener.DeliveryInfo)
 			listenerItem.Method(event)

@@ -90,7 +90,7 @@ type BodyStructureEmmiter struct {
 
 func main() {
   var eventName = "receipt.payments.pay.users"
-  var body := EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 350.76, Name: "John"})
+  var body := BodyStructureEmmiter{Amount: 350.76, Name: "John"}
 
 
   event := EventPeople.NewEvent(eventName, body)
@@ -135,7 +135,7 @@ func main() {
   var once = make(chan int)
 
   EventPeople.NewListener().On(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
-    msg := EventPeople.StructToJsonString(event.Body)
+    msg := event.Body
 
 		fmt.Println("")
 		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))
@@ -162,7 +162,7 @@ func main() {
   var eventName = "payment.payments.pay.all"
 
 	EventPeople.NewListener().On(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
-		msg := EventPeople.StructToJsonString(event.Body)
+		msg := event.Body
 
 		fmt.Println("")
 		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))

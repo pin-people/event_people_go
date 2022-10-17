@@ -34,22 +34,15 @@ type SecondPrivateMessageEmitter struct {
 func RunEmitter() {
 	var events []*EventPeople.Event
 
-	events = append(events, EventPeople.NewEvent("resource.custom.pay", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 1500, Name: "John"})))
-
-	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 35, Name: "Peter"})))
-
-	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 350, Name: "George"})))
-
-	events = append(events, EventPeople.NewEvent("resource.custom.receive", EventPeople.StructToJsonString(BodyStructureEmmiter{Amount: 550, Name: "James"})))
-
-	events = append(events, EventPeople.NewEvent("resource.custom.private.service", EventPeople.StructToJsonString(PrivateMessageEmitter{Message: "Secret"})))
-
+	events = append(events, EventPeople.NewEvent("resource.custom.pay", BodyStructureEmmiter{Amount: 1500, Name: "John"}))
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", BodyStructureEmmiter{Amount: 35, Name: "Peter"}))
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", BodyStructureEmmiter{Amount: 350, Name: "George"}))
+	events = append(events, EventPeople.NewEvent("resource.custom.receive", BodyStructureEmmiter{Amount: 550, Name: "James"}))
+	events = append(events, EventPeople.NewEvent("resource.custom.private.service", PrivateMessageEmitter{Message: "Secret"}))
 	EventPeople.NewEmitter().Trigger(events)
 
-	singleEvent := EventPeople.NewEvent("resource.origin.action", EventPeople.StructToJsonString(SecondPrivateMessageEmitter{Bo: "teste bo", Dy: "teste dy"}))
-
+	singleEvent := EventPeople.NewEvent("resource.origin.action", SecondPrivateMessageEmitter{Bo: "teste bo", Dy: "teste dy"})
 	EventPeople.NewEmitter().Trigger([]*EventPeople.Event{singleEvent})
-
 	EventPeople.Config.CloseConnection()
 }
 
