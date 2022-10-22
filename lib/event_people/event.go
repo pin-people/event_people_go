@@ -98,8 +98,9 @@ func (event *Event) GetRoutingKey() string {
 	return event.Headers.AppName + "-" + event.Headers.Resource + "." + event.Headers.Origin + "." + event.Headers.Action + "." + event.Headers.Destination
 }
 
-func (event *Event) GetStructBody(body any) {
-	json.Unmarshal([]byte(event.Body), &body)
+func (event *Event) SetStructBody(body any) {
+	err := json.Unmarshal([]byte(event.Body), &body)
+	FailOnError(err, "Error on unmarchal struct")
 }
 
 func structToJsonString(object any) string {

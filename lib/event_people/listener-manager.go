@@ -1,11 +1,11 @@
 package EventPeople
 
-type ManagerMethod func(event Event)
+type ListenerMethod func(event Event)
 
 type ListenerManagerStruct struct {
-	RoutingKey string
-	Method     ManagerMethod
-	Listener   *BaseListener
+	EventName string
+	Method    ListenerMethod
+	Listener  *BaseListener
 }
 
 type manager struct{}
@@ -17,8 +17,8 @@ var ListenerConfigurationsList []ListenerManagerStruct
 func (manager manager) BindAllListeners() {
 	for index := range ListenerConfigurationsList {
 		listenerItem := ListenerConfigurationsList[index]
-		NewListener().On(listenerItem.RoutingKey, func(event Event, listener BaseListener) {
-			listenerItem.Listener.Initialize(listener.context, listener.DeliveryInfo)
+		ListenTo(listenerItem.EventName, func(event Event, context ContextInterface) {
+			listenerItem.Listener.Initialize(context)
 			listenerItem.Method(event)
 		})
 	}

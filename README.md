@@ -69,13 +69,13 @@ func main() {
 
 There are 3 main interfaces to use `EventPeople` on your project:
 
-- Calling `EventPeople.NewEmitter().Trigger(event []*EventPeople.Event)` inside your project;
-- Calling `EventPeople.NewListener().On(eventName string)` inside your project;
-- Or extending `EventPeople.BaseListeners` and use it as a daemon.
+- Calling `EventPeople.TriggerEmitter(event []*EventPeople.Event)` inside your project;
+- Calling `EventPeople.ListenTo(eventName string)` inside your project;
+- Or extending `EventPeople.BaseListener` and use it as a daemon.
 
 ### Using the Emitter
 
-You can emit events on your project passing an `EventPeople.Event` instance to the `EventPeople.NewEmitter().Trigger` method. Doing this other services that are subscribed to these events will receive it.
+You can emit events on your project passing an `EventPeople.Event` instance to the `EventPeople.TriggerEmitter` method. Doing this other services that are subscribed to these events will receive it.
 
 ```golang
 import (
@@ -95,7 +95,7 @@ func main() {
 
   event := EventPeople.NewEvent(eventName, body)
 
-  EventPeople.NewEmitter().Trigger(event)
+  EventPeople.TriggerEmitter([]*EventPeople.Event{event})
 
   // Don't forget to close the connection!!!
   EventPeople.Config.CloseConnection()
@@ -120,7 +120,7 @@ Other important aspect of event consumming is the result of the processing we pr
 - `Fail:` should be called when an error ocurred processing the event and the message should be requeued;
 - `Reject:` should be called whenever a message should be discarded without being processed.
 
-Given you want to consume a single event inside your project you can use the `EventPeople.NewListener().On` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
+Given you want to consume a single event inside your project you can use the `EventPeople.ListenTo` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
 
 ```golang
 import (
@@ -134,7 +134,7 @@ func main() {
   var eventName = "payment.payments.pay"
   var once = make(chan int)
 
-  EventPeople.NewListener().On(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
+  EventPeople.ListenTo(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
     msg := event.Body
 
 		fmt.Println("")
@@ -161,7 +161,7 @@ var once = make(chan int)
 func main() {
   var eventName = "payment.payments.pay.all"
 
-	EventPeople.NewListener().On(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
+	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
 		msg := event.Body
 
 		fmt.Println("")
@@ -185,7 +185,7 @@ func main() {
 
 #### Multiple events routing
 
-If your project needs to handle lots of events you can extend `EventPeople.BaseListeners` class to bind how many events you need to instance methods, so whenever an event is received the method will be called automatically.
+If your project needs to handle lots of events you can extend `EventPeople.BaseListener` class to bind how many events you need to instance methods, so whenever an event is received the method will be called automatically.
 
 ```golang
 import (
@@ -224,16 +224,9 @@ type CustomEventListener struct {
 	EventPeople.BaseListener
 }
 
-func (cel *CustomEventListener) RunListeners() {
-  cel.bindEvent("resource.custom.pay", cel.pay);
-  cel.bindEvent("resource.custom.receive", cel.receive);
-  cel.bindEvent("resource.custom.private.service", cel.privateChannel);
-}
-
 func (cel *CustomEventListener) pay(event EventPeople.Event) {
 	var bodyDaemon = new(BodyStructureDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
 	cel.Success()
@@ -241,8 +234,7 @@ func (cel *CustomEventListener) pay(event EventPeople.Event) {
 
 func (cel *CustomEventListener) receive(event EventPeople.Event) {
 	var bodyDaemon = new(BodyStructureDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+  event.SetStructBody(&bodyDaemon)
 
 	if bodyDaemon.Amount < 500 {
 		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
@@ -255,8 +247,7 @@ func (cel *CustomEventListener) receive(event EventPeople.Event) {
 
 func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 	var bodyDaemon = new(PrivateMessageDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+  event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
 	cel.Success()
@@ -269,7 +260,7 @@ func main() {
 	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
 	custom.BindEvent(custom.secondPrivateChannel, "resource.origin.action.service")
 
-	EventPeople.NewDaemon().Start()
+	EventPeople.DaemonStart()
 }
 ```
 
@@ -277,7 +268,7 @@ func main() {
 
 #### Creating a Daemon
 
-If you have the need to create a deamon to consume messages on background you can use the `EventPeople.Daemon.Start` method to do so with ease. Just remember to define or import all the event bindings before starting the daemon.
+If you have the need to create a deamon to consume messages on background you can use the `EventPeople.DaemonStart` method to do so with ease. Just remember to define or import all the event bindings before starting the daemon.
 
 ```golang
 import (
@@ -316,16 +307,9 @@ type CustomEventListener struct {
 	EventPeople.BaseListener
 }
 
-func (cel *CustomEventListener) RunListeners() {
-  cel.bindEvent("resource.custom.pay", cel.pay);
-  cel.bindEvent("resource.custom.receive", cel.receive);
-  cel.bindEvent("resource.custom.private.service", cel.privateChannel);
-}
-
 func (cel *CustomEventListener) pay(event EventPeople.Event) {
 	var bodyDaemon = new(BodyStructureDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
 	cel.Success()
@@ -333,8 +317,7 @@ func (cel *CustomEventListener) pay(event EventPeople.Event) {
 
 func (cel *CustomEventListener) receive(event EventPeople.Event) {
 	var bodyDaemon = new(BodyStructureDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	if bodyDaemon.Amount < 500 {
 		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
@@ -347,8 +330,7 @@ func (cel *CustomEventListener) receive(event EventPeople.Event) {
 
 func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 	var bodyDaemon = new(PrivateMessageDaemon)
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
 	cel.Success()
@@ -361,7 +343,7 @@ func main() {
 	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
 	custom.BindEvent(custom.secondPrivateChannel, "resource.origin.action.service")
 
-	EventPeople.NewDaemon().Start()
+	EventPeople.DaemonStart()
 }
 ```
 

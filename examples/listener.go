@@ -18,7 +18,7 @@ func init() {
 	EventPeople.Config.Init()
 }
 
-func listenerCallback(event EventPeople.Event, context EventPeople.BaseListener) {
+func listenerCallback(event EventPeople.Event, context EventPeople.ContextInterface) {
 	msg := event.Body
 	fmt.Println(
 		fmt.Sprintf("EventName: %s \nBody: %s", event.Name, msg),
@@ -30,8 +30,8 @@ func listenerCallback(event EventPeople.Event, context EventPeople.BaseListener)
 var twice = make(chan int)
 
 func RunListener() {
-	EventPeople.NewListener().On("resource.custom.*", listenerCallback)
-	EventPeople.NewListener().On("resource.origin.*", listenerCallback)
+	EventPeople.ListenTo("resource.custom.*", listenerCallback)
+	EventPeople.ListenTo("resource.origin.*", listenerCallback)
 	<-twice
 	<-twice
 	EventPeople.Config.CloseConnection()
@@ -42,9 +42,9 @@ var once = make(chan int)
 func main() {
 	// RunListener()
 
-	var eventName = "payment.payments.pay.all"
+	var eventName = "payment.payments.pay.service"
 
-	EventPeople.NewListener().On(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
+	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.ContextInterface) {
 		msg := event.Body
 
 		fmt.Println("")

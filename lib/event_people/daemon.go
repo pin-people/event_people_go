@@ -1,18 +1,12 @@
 package EventPeople
 
-type Daemon struct{}
-
-func (d *Daemon) Start() {
+func DaemonStart() {
 	var forever chan struct{}
 	ListenerManager.BindAllListeners()
 	defer Config.Broker.CloseConnection()
 	<-forever
 }
 
-func (d *Daemon) Stop() {
+func DaemonStop() {
 	Config.Broker.CloseConnection()
-}
-
-func NewDaemon() *Daemon {
-	return new(Daemon)
 }

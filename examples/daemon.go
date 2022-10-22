@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -38,8 +37,7 @@ type CustomEventListener struct {
 
 func (custom *CustomEventListener) pay(event EventPeople.Event) {
 	var bodyDaemon = BodyStructureDaemon{}
-	err := json.Unmarshal([]byte(event.Body), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetRoutingKey()))
 	custom.Success()
@@ -47,8 +45,7 @@ func (custom *CustomEventListener) pay(event EventPeople.Event) {
 
 func (custom *CustomEventListener) receive(event EventPeople.Event) {
 	var bodyDaemon = BodyStructureDaemon{}
-	err := json.Unmarshal([]byte(event.Body), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	if bodyDaemon.Amount < 500 {
 		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetRoutingKey()))
@@ -61,8 +58,7 @@ func (custom *CustomEventListener) receive(event EventPeople.Event) {
 
 func (custom *CustomEventListener) privateChannel(event EventPeople.Event) {
 	var bodyDaemon = PrivateMessageDaemon{}
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.GetRoutingKey()))
 	custom.Success()
@@ -70,8 +66,7 @@ func (custom *CustomEventListener) privateChannel(event EventPeople.Event) {
 
 func (custom *CustomEventListener) secondPrivateChannel(event EventPeople.Event) {
 	var bodyDaemon = SecondPrivateMessageDaemon{}
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", event.Body)), &bodyDaemon)
-	EventPeople.FailOnError(err, "Error on unmarchal daemon pay")
+	event.SetStructBody(&bodyDaemon)
 
 	fmt.Println(fmt.Sprintf("[Consumer] 2 Got a private message: %s ~> %s", fmt.Sprintf("bo: %s -> dy: %s", bodyDaemon.Bo, bodyDaemon.Dy), event.GetRoutingKey()))
 	custom.Success()
@@ -84,7 +79,7 @@ func RunDaemon() {
 	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
 	custom.BindEvent(custom.secondPrivateChannel, "resource.origin.action")
 
-	EventPeople.NewDaemon().Start()
+	EventPeople.DaemonStart()
 }
 
 func main() {

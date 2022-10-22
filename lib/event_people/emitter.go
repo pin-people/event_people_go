@@ -4,9 +4,7 @@ import (
 	"log"
 )
 
-type Emitter struct{}
-
-func (emitter *Emitter) Trigger(events []*Event) {
+func TriggerEmitter(events []*Event) {
 	for index, event := range events {
 		if event.Body == "" {
 			log.Fatalf("MissingAttributeError: Event on position %d must have a body", index)
@@ -16,8 +14,4 @@ func (emitter *Emitter) Trigger(events []*Event) {
 		}
 		Config.Broker.Produce(*event)
 	}
-}
-
-func NewEmitter() *Emitter {
-	return new(Emitter)
 }

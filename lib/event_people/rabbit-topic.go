@@ -28,7 +28,7 @@ func (topic *Topic) Produce(event Event) {
 	defer cancel()
 	fmt.Printf("Producing message to %s!\n", event.Name)
 	err := topic.channel.PublishWithContext(ctx, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), event.Name, false, false, message)
-	fmt.Printf("Message to %s sended!\n", event.Name)
+	fmt.Printf("Message sent to %s!\n", event.Name)
 
 	FailOnError(err, "Error on publish message")
 }

@@ -34,6 +34,7 @@ func (rabbit *RabbitBroker) Channel() {
 	channel, err := rabbit.connection.Channel()
 	FailOnError(err, "Failed to open a channel")
 	rabbit.amqpChannel = channel
+	rabbit.amqpChannel.Qos(1, 0, false)
 	rabbit.topic.Init(rabbit.amqpChannel)
 }
 
@@ -45,8 +46,8 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = Queue{}
-	rabbit.queue.SubscribeWithChannel(rabbit.amqpChannel, eventName, callback)
+	rabbit.queue = Queue{channel: rabbit.amqpChannel}
+	rabbit.queue.Subscribe(eventName, callback)
 }
 
 func (rabbit *RabbitBroker) Produce(event Event) {

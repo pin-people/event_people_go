@@ -39,10 +39,10 @@ func RunEmitter() {
 	events = append(events, EventPeople.NewEvent("resource.custom.receive", BodyStructureEmmiter{Amount: 350, Name: "George"}))
 	events = append(events, EventPeople.NewEvent("resource.custom.receive", BodyStructureEmmiter{Amount: 550, Name: "James"}))
 	events = append(events, EventPeople.NewEvent("resource.custom.private.service", PrivateMessageEmitter{Message: "Secret"}))
-	EventPeople.NewEmitter().Trigger(events)
+	EventPeople.TriggerEmitter(events)
 
 	singleEvent := EventPeople.NewEvent("resource.origin.action", SecondPrivateMessageEmitter{Bo: "teste bo", Dy: "teste dy"})
-	EventPeople.NewEmitter().Trigger([]*EventPeople.Event{singleEvent})
+	EventPeople.TriggerEmitter([]*EventPeople.Event{singleEvent})
 	EventPeople.Config.CloseConnection()
 }
 

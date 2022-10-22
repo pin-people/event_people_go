@@ -1,3 +1,3 @@
 package EventPeople
 
-type Callback func(event Event, listener BaseListener)
+type Callback func(event Event, context ContextInterface)

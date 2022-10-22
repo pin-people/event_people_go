@@ -6,8 +6,7 @@ import (
 )
 
 type AbstractBaseListener interface {
-	Initialize(context ContextInterface, deliveryInfo DeliveryInfo)
-	Callback(methodName string, event any)
+	Initialize(context ContextInterface)
 	Success()
 	Fail()
 	Reject()
@@ -15,45 +14,55 @@ type AbstractBaseListener interface {
 
 type BaseListener struct {
 	AbstractBaseListener
-	context      ContextInterface
-	DeliveryInfo DeliveryInfo
+	context ContextInterface
 }
 
-func (base *BaseListener) Initialize(context ContextInterface, deliveryInfo DeliveryInfo) {
+func (base *BaseListener) Initialize(context ContextInterface) {
 	base.context = context
-	base.DeliveryInfo = deliveryInfo
 }
 
 func (base *BaseListener) Success() {
-	base.context.Ack(false)
+	base.context.Success()
 }
 
 func (base *BaseListener) Fail() {
-	base.context.Nack(false, true)
+	base.context.Fail()
 }
 
 func (base *BaseListener) Reject() {
-	base.context.Reject(false)
+	base.context.Reject()
 }
 
-func (base *BaseListener) BindEvent(method ManagerMethod, eventName string) {
+func (base *BaseListener) BindEvent(method ListenerMethod, eventName string) {
+	eventNameSplited := strings.Split(eventName, ".")
+
+	if len(eventNameSplited) <= 4 {
+		ListenerManager.Register(
+			ListenerManagerStruct{
+				EventName: FixedEventName(eventName, "all"),
+				Method:    method,
+				Listener:  base,
+			},
+		)
+		ListenerManager.Register(
+			ListenerManagerStruct{
+				EventName: FixedEventName(eventName, os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")),
+				Method:    method,
+				Listener:  base,
+			},
+		)
+		return
+	}
 	ListenerManager.Register(
 		ListenerManagerStruct{
-			RoutingKey: base.fixedEventName(eventName, "all"),
-			Method:     method,
-			Listener:   base,
-		},
-	)
-	ListenerManager.Register(
-		ListenerManagerStruct{
-			RoutingKey: base.fixedEventName(eventName, os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")),
-			Method:     method,
-			Listener:   base,
+			EventName: FixedEventName(eventName, os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")),
+			Method:    method,
+			Listener:  base,
 		},
 	)
 }
 
-func (base *BaseListener) fixedEventName(eventName string, postfix string) string {
+func FixedEventName(eventName string, postfix string) string {
 	eventNameSplited := strings.Split(eventName, ".")
 
 	if len(eventNameSplited) == 4 {
@@ -62,10 +71,4 @@ func (base *BaseListener) fixedEventName(eventName string, postfix string) strin
 	}
 	eventNameSplited = append(eventNameSplited, postfix)
 	return strings.Join(eventNameSplited, ".")
-}
-
-func NewBaseListener(context ContextInterface, deliveryInfo DeliveryInfo) *BaseListener {
-	listener := new(BaseListener)
-	listener.Initialize(context, deliveryInfo)
-	return listener
 }
