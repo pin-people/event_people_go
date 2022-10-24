@@ -1,5 +1,5 @@
 package EventPeople
 
 func ListenTo(eventName string, callback Callback) {
-	Config.Broker.Consume(eventName, callback)
+    Config.Broker.Consume(eventName, callback)
 }

@@ -47,7 +47,7 @@ The main component of `EventPeople` is the `EventPeople.Event` class which wraps
 It has 2 attributes `name` and `payload`:
 
 - **name:** The name must follow our conventions, being it 3 (`resource.origin.action`) or 4 words (`resource.origin.action.destination`);
-- **payload:** It is the body of the massage, it should be a Hash object for simplicity and flexibility.
+- **payload:** It is the body of the massage, it should be a Custom Struct mapping the JSON fields of the message.
 
 ```golang
 import (
@@ -255,10 +255,10 @@ func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 
 func main() {
   custom := new(CustomEventListener)
-	custom.BindEvent(custom.pay, "resource.custom.pay")
-	custom.BindEvent(custom.receive, "resource.custom.receive")
-	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
-	custom.BindEvent(custom.secondPrivateChannel, "resource.origin.action.service")
+	custom.BindEvent("pay", "resource.custom.pay")
+	custom.BindEvent("receive", "resource.custom.receive")
+	custom.BindEvent("privateChannel", "resource.custom.private.service")
+	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
 
 	EventPeople.DaemonStart()
 }
@@ -338,10 +338,10 @@ func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 
 func main() {
   custom := new(CustomEventListener)
-	custom.BindEvent(custom.pay, "resource.custom.pay")
-	custom.BindEvent(custom.receive, "resource.custom.receive")
-	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
-	custom.BindEvent(custom.secondPrivateChannel, "resource.origin.action.service")
+	custom.BindEvent("pay", "resource.custom.pay")
+	custom.BindEvent("receive", "resource.custom.receive")
+	custom.BindEvent("privateChannel", "resource.custom.private.service")
+	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
 
 	EventPeople.DaemonStart()
 }

@@ -1,5 +1,5 @@
 package EventPeople
 
 type DeliveryInfo struct {
-	Tag string
+    Tag string
 }
