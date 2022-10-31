@@ -54,8 +54,8 @@ func (queue *Queue) callback(deliveries <-chan amqp.Delivery, callback Callback)
 	}
 }
 
-func (queue *Queue) createQueue(routingKey string) {
-	localQueue, err := queue.channel.QueueDeclare(routingKey, true, false, false, false, nil)
+func (queue *Queue) createQueue(queueName string) {
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
 	FailOnError(err, "Failed to declare a queue")
 	queue.amqpQueue = &localQueue
 }
@@ -73,7 +73,7 @@ func (queue *Queue) createQueueAndBind(routingKey string, callback Callback) {
 	queueName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")
 	queue.createQueue(queueName)
 	queue.exchangeBind(queueName, routingKey)
-	messages, err := queue.channel.Consume(queueName, queueName, false, false, false, false, nil)
+	messages, err := queue.channel.Consume(queueName, "", false, false, false, false, nil)
 	FailOnError(err, "Failed to consume a queue")
 	go queue.callback(messages, callback)
 	fmt.Printf("Event People consuming %s Queue!\n", queue.amqpQueue.Name)

@@ -25,10 +25,10 @@ func (topic *Topic) Produce(event Event) {
 		Body:         []byte(event.Payload()),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	fmt.Printf("Producing message to %s!\n", event.GetRoutingKey())
-	err := topic.channel.PublishWithContext(ctx, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), event.GetRoutingKey(), false, false, message)
+	fmt.Printf("Producing message to %s!\n", event.GetEventName())
+	err := topic.channel.PublishWithContext(ctx, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), event.GetEventName(), false, false, message)
 	FailOnError(err, "Error on publish message")
-	fmt.Printf("Message sent to %s!\n", event.GetRoutingKey())
+	fmt.Printf("Message sent to %s!\n", event.GetEventName())
 	defer cancel()
 }
 

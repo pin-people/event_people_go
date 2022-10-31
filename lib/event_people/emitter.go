@@ -1,17 +1,19 @@
 package EventPeople
 
 import (
-    "log"
+	"log"
 )
 
 func TriggerEmitter(events []*Event) {
-    for index, event := range events {
-        if event.Body == "" {
-            log.Fatalf("MissingAttributeError: Event on position %d must have a body", index)
-        }
-        if event.Name == "" {
-            log.Fatalf("MissingAttributeError: Event on position %d must have a name", index)
-        }
-        Config.Broker.Produce(*event)
-    }
+	for index, event := range events {
+		if event.Body == "" {
+			log.Fatalf("MissingAttributeError: Event on position %d must have a body", index)
+		}
+		if event.Name == "" {
+			log.Fatalf("MissingAttributeError: Event on position %d must have a name", index)
+		}
+	}
+	for _, event := range events {
+		Config.Broker.Produce(*event)
+	}
 }

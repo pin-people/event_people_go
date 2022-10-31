@@ -88,13 +88,11 @@ func (event *Event) fixName() {
 	if len(headerSpec) == 3 {
 		headerSpec = append(headerSpec, "all")
 		name := strings.Join(headerSpec, ".")
-		event.Name = event.Headers.AppName + "-" + name
-	} else {
-		event.Name = event.Headers.AppName + "-" + event.Name
+		event.Name = name
 	}
 }
 
-func (event *Event) GetRoutingKey() string {
+func (event *Event) GetEventName() string {
 	return event.Headers.Resource + "." + event.Headers.Origin + "." + event.Headers.Action + "." + event.Headers.Destination
 }
 
