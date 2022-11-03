@@ -1,10 +1,10 @@
 package EventPeople
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 
-    amqp "github.com/rabbitmq/amqp091-go"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type RabbitBroker struct {

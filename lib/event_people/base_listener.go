@@ -1,8 +1,8 @@
 package EventPeople
 
 import (
-    "os"
-    "strings"
+	"os"
+	"strings"
 )
 
 type AbstractBaseListener interface {
