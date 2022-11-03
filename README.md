@@ -6,10 +6,10 @@ EventPeople is a tool to simplify the communication of event based services. It 
 
 The main idea is to provide a tool that can emit or consume events based on its names, the event name has 4 words (`resource.origin.action.destination`) which defines some important info about what kind of event it is, where it comes from and who is eligible to consume it:
 
-- **resource:** Defines which resource this event is related like a `user`, a `product`, `company` or anything that you want;
-- **origin:** Defines the name of the system which emitted the event;
-- **action:** What action is made on the resource like `create`, `delete`, `update`, etc. PS: _It is recommended to use the Simple Present tense for actions_;
-- **destination (Optional):** This word is optional and if not provided EventPeople will add a `.all` to the end of the event name. It defines which service should consume the event being emitted, so if it is defined and there is a service whith the given name only this service will receive it. It is very helpful when you need to re-emit some events. Also if it is `.all` all services will receive it.
+-   **resource:** Defines which resource this event is related like a `user`, a `product`, `company` or anything that you want;
+-   **origin:** Defines the name of the system which emitted the event;
+-   **action:** What action is made on the resource like `create`, `delete`, `update`, etc. PS: _It is recommended to use the Semple Present tense for actions_;
+-   **destination (Optional):** This word is optional and if not provided EventPeople will add a `.all` to the end of the event name. It defines which service should consume the event being emitted, so if it is defined and there is a service whith the given name only this service will receive it. It is very helpful when you need to re-emit some events. Also if it is `.all` all services will receive it.
 
 As of today EventPeople uses RabbitMQ as its datasource, but there are plans to add support for other Brokers in the future.
 
@@ -25,13 +25,17 @@ To install and add it as a dependency in your project:
 
     $ go get "github.com/pinpeople/event-people-go"
 
-And set env vars:
+Set env vars and execute init function:
 
-```bash
-export RABBIT_URL = 'amqp://guest:guest@localhost:5672'
-export RABBIT_EVENT_PEOPLE_APP_NAME = 'service_name'
-export RABBIT_EVENT_PEOPLE_VHOST = 'event_people'
-export RABBIT_EVENT_PEOPLE_TOPIC_NAME = 'event_people'
+```golang
+func init() {
+	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
+	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
+	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
+	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
+
+	EventPeople.Config.Init()
+}
 ```
 
 ## Usage
@@ -42,42 +46,61 @@ The main component of `EventPeople` is the `EventPeople.Event` class which wraps
 
 It has 2 attributes `name` and `payload`:
 
-- **name:** The name must follow our conventions, being it 3 (`resource.origin.action`) or 4 words (`resource.origin.action.destination`);
-- **payload:** It is the body of the massage, it should be a Hash object for simplicity and flexibility.
-
-```golang
-import (
-  "github.com/pinpeople/event-people-go"
-)
-
-var event_name = "user.users.create";
-var body = { id: 42, name: "John Doe", age: 35 };
-var event = new EventPeople(event_name, body);
-```
-
-There are 3 main interfaces to use `EventPeople` on your project:
-
-- Calling `EventPeople.Emitter.Trigger(event: Event)` inside your project;
-- Calling `EventPeople.Listener.On(event_name: String)` inside your project;
-- Or extending `EventPeople.BaseListeners` and use it as a daemon.
-
-### Using the Emitter
-
-You can emit events on your project passing an `EventPeople.Event` instance to the `EventPeople.Emitter.Trigger` method. Doing this other services that are subscribed to these events will receive it.
+-   **name:** The name must follow our conventions, being it 3 (`resource.origin.action`) or 4 words (`resource.origin.action.destination`);
+-   **payload:** It is the body of the massage, it should be a Custom Struct mapping the JSON fields of the message.
 
 ```golang
 import (
   EventPeople "github.com/pinpeople/event-people-go"
 )
 
-const event_name = "receipt.payments.pay.users"
-const body = { amount: 350.76 }
-const event = new Event(event_name, body)
+type BodyStructure struct {
+	Amount int    `json:"amount"`
+	Name   string `json:"name"`
+}
 
-EventPeople.Emitter.Trigger(event)
+func main() {
+  var eventName = "user.users.create";
+  var body = BodyStructure{ id: 42, name: "John Doe", age: 35 };
+  var event = EventPeople.NewEvent(event_name, body);
+}
 
-// Don't forget to close the connection!!!
-EventPeople.Config.close_connection()
+```
+
+There are 3 main interfaces to use `EventPeople` on your project:
+
+-   Calling `EventPeople.TriggerEmitter(event []*EventPeople.Event)` inside your project;
+-   Calling `EventPeople.ListenTo(eventName string)` inside your project;
+-   Or extending `EventPeople.BaseListener` and use it as a daemon.
+
+### Using the Emitter
+
+You can emit events on your project passing an `EventPeople.Event` instance to the `EventPeople.TriggerEmitter` method. Doing this other services that are subscribed to these events will receive it.
+
+```golang
+import (
+  "encoding/json"
+  EventPeople "github.com/pinpeople/event-people-go"
+)
+
+type BodyStructureEmmiter struct {
+	Amount int    `json:"amount"`
+	Name   string `json:"name"`
+}
+
+func main() {
+  var eventName = "receipt.payments.pay.users"
+  var body := BodyStructureEmmiter{Amount: 350.76, Name: "John"}
+
+
+  event := EventPeople.NewEvent(eventName, body)
+
+  EventPeople.TriggerEmitter([]*EventPeople.Event{event})
+
+  // Don't forget to close the connection!!!
+  EventPeople.Config.CloseConnection()
+}
+
 ```
 
 [See more details](https://github.com/pin-people/event_people_node/blob/master/examples/emitter.rb)
@@ -88,16 +111,16 @@ You can subscribe to events based on patterns for the event names you want to co
 
 We follow the RabbitMQ pattern matching model, so given each word of the event name is separated by a dot (`.`), you can use the following symbols:
 
-- `* (star):` to match exactly one word. Example `resource.*.*.all`;
-- `# (hash):` to match zero or more words. Example `resource.#.all`.
+-   `* (star):` to match exactly one word. Example `resource.*.*.all`;
+-   `# (hash):` to match zero or more words. Example `resource.#.all`.
 
 Other important aspect of event consumming is the result of the processing we provide 3 methods so you can inform the Broker what to do with the event next:
 
-- `success:` should be called when the event was processed successfuly and the can be discarded;
-- `fail:` should be called when an error ocurred processing the event and the message should be requeued;
-- `reject:` should be called whenever a message should be discarded without being processed.
+-   `Success:` should be called when the event was processed successfuly and the can be discarded;
+-   `Fail:` should be called when an error ocurred processing the event and the message should be requeued;
+-   `Reject:` should be called whenever a message should be discarded without being processed.
 
-Given you want to consume a single event inside your project you can use the `EventPeople.Listener.On` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
+Given you want to consume a single event inside your project you can use the `EventPeople.ListenTo` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
 
 ```golang
 import (
@@ -105,92 +128,139 @@ import (
   EventPeople "github.com/pinpeople/event-people-go"
 )
 
-// 3 words event names will be replaced by its 4 word wildcard
-// counterpart: 'payment.payments.pay.all'
-var event_name = "payment.payments.pay"
+func main() {
+  // 3 words event names will be replaced by its 4 word wildcard
+  // counterpart: 'payment.payments.pay.all'
+  var eventName = "payment.payments.pay"
+  var once = make(chan int)
 
-EventPeople.Listener.On(event_name, (event: Event, context: EventPeople.BaseListener) => {
-  fmt.Println("")
-  fmt.Println(`  - Received the "${event.name}" message from ${event.origin}:`);
-  fmt.Println(`     Message: ${event.body}`);
-  fmt.Println("")
-  context.Success()
-});
+  EventPeople.ListenTo(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
+    msg := event.Body
 
-defer EventPeople.Config.Close_connection()
+		fmt.Println("")
+		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))
+		fmt.Println(fmt.Sprintf("     Message: %s", msg))
+		fmt.Println("")
+		context.Success()
+    once <- 1
+  });
+  <-once
+  EventPeople.Config.CloseConnection()
+}
 ```
 
-You can also receive all available messages using a loop:
+You can also receive all available messages using a channel and time sleep:
 
 ```golang
 import (
   "fmt"
   EventPeople "github.com/pinpeople/event-people-go"
 )
+var once = make(chan int)
 
-var event_name = "payment.payments.pay.all";
-var has_events = true;
+func main() {
+  var eventName = "payment.payments.pay.all"
 
-while (has_events) {
-  has_events = false;
+	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
+		msg := event.Body
 
-  EventPeople.Listener.On("SOME_EVENT", (event: Event, context: EventPeople.Listener.
-  ) => {
-    has_events = true;
-    fmt.Println("");
-    fmt.Println(
-      `  - Received the "${event.name}" message from ${event.origin}:`
-    );
-    fmt.Println(`     Message: ${event.body}`);
-    fmt.Println("");
-    context.success();
-  });
+		fmt.Println("")
+		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))
+		fmt.Println(fmt.Sprintf("     Message: %s", msg))
+		fmt.Println("")
+		context.Success()
+	})
+
+	go func() {
+    time.Sleep(15 * time.Second)
+		once <- 1
+	}()
+
+	<-once
+  EventPeople.Config.CloseConnection()
 }
-
-EventPeople.Config.close_connection();
 ```
 
 [See more details](https://github.com/pin-people/event_people_node/blob/master/examples/listener.rb)
 
 #### Multiple events routing
 
-If your project needs to handle lots of events you can extend `EventPeople.BaseListeners` class to bind how many events you need to instance methods, so whenever an event is received the method will be called automatically.
+If your project needs to handle lots of events you can extend `EventPeople.BaseListener` class to bind how many events you need to instance methods, so whenever an event is received the method will be called automatically.
 
 ```golang
 import (
-  "fmt"
-  EventPeople "github.com/pinpeople/event-people-go"
+	"encoding/json"
+	"fmt"
+	"os"
+
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
 )
 
+func init() {
+	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
+	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
+	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
+	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
+	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
+
+	EventPeople.Config.Init()
+}
+
+type BodyStructureDaemon struct {
+	Amount int    `json:"amount"`
+	Name   string `json:"name"`
+}
+
+type PrivateMessageDaemon struct {
+	Message string `json:"message"`
+}
+
+type SecondPrivateMessageDaemon struct {
+	Bo string `json:"bo"`
+	Dy string `json:"dy"`
+}
+
 type CustomEventListener struct {
-  EventPeople.BaseListeners
+	EventPeople.BaseListener
 }
 
-func (cel *CustomEventListener) RunListeners() {
-  cel.bindEvent("resource.custom.pay", cel.pay);
-  cel.bindEvent("resource.custom.receive", cel.receive);
-  cel.bindEvent("resource.custom.private.service", cel.privateChannel);
-}
-func (cel *CustomEventListener) pay(event: Event) {
-  fmt.Println(`Paid #{event.body['amount']} for #{event.body['name']} ~> #{event.name}`);
+func (cel *CustomEventListener) pay(event EventPeople.Event) {
+	var bodyDaemon = new(BodyStructureDaemon)
+	event.SetStructBody(&bodyDaemon)
 
-  this.success();
-}
-func (cel *CustomEventListener) receive(event: Event) {
-  if (event.body.amount > 500) {
-    fmt.Println(`Received ${event.body['amount']} from ${event.body['name']} ~> ${event.name}`);
-  } else {
-    fmt.Println("[consumer] Got SKIPPED message");
-    return this.reject();
-  }
-
-  this.success();
+	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
+	cel.Success()
 }
 
-func (cel *CustomEventListener) privateChannel(event: Event) {
-  fmt.Println(`[consumer] Got a private message: "${event.body['message']}" ~> ${event.name}`);
+func (cel *CustomEventListener) receive(event EventPeople.Event) {
+	var bodyDaemon = new(BodyStructureDaemon)
+  event.SetStructBody(&bodyDaemon)
 
-  this.success();
+	if bodyDaemon.Amount < 500 {
+		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
+		cel.Reject()
+		return
+	}
+	fmt.Println("Received %d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name)
+	cel.Success()
+}
+
+func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
+	var bodyDaemon = new(PrivateMessageDaemon)
+  event.SetStructBody(&bodyDaemon)
+
+	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
+	cel.Success()
+}
+
+func main() {
+  custom := new(CustomEventListener)
+	custom.BindEvent("pay", "resource.custom.pay")
+	custom.BindEvent("receive", "resource.custom.receive")
+	custom.BindEvent("privateChannel", "resource.custom.private.service")
+	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
+
+	EventPeople.DaemonStart()
 }
 ```
 
@@ -198,66 +268,98 @@ func (cel *CustomEventListener) privateChannel(event: Event) {
 
 #### Creating a Daemon
 
-If you have the need to create a deamon to consume messages on background you can use the `EventPeople.Daemon.Start` method to do so with ease. Just remember to define or import all the event bindings before starting the daemon.
+If you have the need to create a deamon to consume messages on background you can use the `EventPeople.DaemonStart` method to do so with ease. Just remember to define or import all the event bindings before starting the daemon.
 
 ```golang
 import (
-  "fmt"
-  EventPeople "github.com/pinpeople/event-people-go"
+	"encoding/json"
+	"fmt"
+	"os"
+
+	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
 )
 
+func init() {
+	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
+	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
+	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
+	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
+	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
+
+	EventPeople.Config.Init()
+}
+
+type BodyStructureDaemon struct {
+	Amount int    `json:"amount"`
+	Name   string `json:"name"`
+}
+
+type PrivateMessageDaemon struct {
+	Message string `json:"message"`
+}
+
+type SecondPrivateMessageDaemon struct {
+	Bo string `json:"bo"`
+	Dy string `json:"dy"`
+}
+
 type CustomEventListener struct {
-  EventPeople.BaseListeners
+	EventPeople.BaseListener
 }
 
-func (cel *CustomEventListener) RunListeners() {
-  cel.bindEvent("resource.custom.pay", cel.pay);
-  cel.bindEvent("resource.custom.receive", cel.receive);
-  cel.bindEvent("resource.custom.private.service", cel.privateChannel);
+func (cel *CustomEventListener) pay(event EventPeople.Event) {
+	var bodyDaemon = new(BodyStructureDaemon)
+	event.SetStructBody(&bodyDaemon)
+
+	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
+	cel.Success()
 }
 
-func (cel *CustomEventListener) pay(event: Event) {
-  fmt.Println(`Paid #{event.body['amount']} for #{event.body['name']} ~> #{event.name}`);
+func (cel *CustomEventListener) receive(event EventPeople.Event) {
+	var bodyDaemon = new(BodyStructureDaemon)
+	event.SetStructBody(&bodyDaemon)
 
-  this.success();
-}
-func (cel *CustomEventListener) receive(event: Event) {
-  if (event.body.amount > 500) {
-    fmt.Println(`Received ${event.body['amount']} from ${event.body['name']} ~> ${event.name}`);
-  } else {
-    fmt.Println("[consumer] Got SKIPPED message");
-    return this.reject();
-  }
-
-  this.success();
+	if bodyDaemon.Amount < 500 {
+		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
+		cel.Reject()
+		return
+	}
+	fmt.Println("Received %d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name)
+	cel.Success()
 }
 
-func (cel *CustomEventListener) privateChannel(event: Event) {
-  fmt.Println(`[consumer] Got a private message: "${event.body['message']}" ~> ${event.name}`);
+func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
+	var bodyDaemon = new(PrivateMessageDaemon)
+	event.SetStructBody(&bodyDaemon)
 
-  this.success();
+	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
+	cel.Success()
 }
 
-fmt.Println("****************** Daemon Ready ******************");
+func main() {
+  custom := new(CustomEventListener)
+	custom.BindEvent("pay", "resource.custom.pay")
+	custom.BindEvent("receive", "resource.custom.receive")
+	custom.BindEvent("privateChannel", "resource.custom.private.service")
+	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
 
-Daemon.Start()
+	EventPeople.DaemonStart()
+}
 ```
 
 [See more details](https://github.com/pin-people/event_people_node/blob/master/examples/daemon.rb)
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `bin/test` to run the tests.
-
 To install this module onto your local machine, run `go get`.
 
 ## Contributing
 
-- Fork it
-- Create your feature branch (`git checkout -b my-new-feature`)
-- Commit your changes (`git commit -am 'Add some feature'`)
-- Push to the branch (`git push origin my-new-feature`)
-- Create a new Pull Request
+-   Fork it
+-   Create your feature branch (`git checkout -b my-new-feature`)
+-   Commit your changes (`git commit -am 'Add some feature'`)
+-   Push to the branch (`git push origin my-new-feature`)
+-   Create a new Pull Request
 
 ## License
 
