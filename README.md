@@ -23,7 +23,23 @@ require github.com/pin-people/event-people-go
 
 To install and add it as a dependency in your project:
 
-    $ go get "github.com/pin-people/event-people-go"
+```cmd
+   $ go get "github.com/pin-people/event-people-go"
+```
+
+You need to install in mode proxy, to this use:
+
+### Linux/MacOS
+
+```cmd
+    $ GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/pin-people/event_people_go
+```
+
+### Windows
+
+```cmd
+    $ set GOPROXY=https://proxy.golang.org; set GO111MODULE=on; go get github.com/pin-people/event_people_go
+```
 
 Set env vars and execute init function:
 
