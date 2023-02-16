@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
+	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
 )
 
 func init() {

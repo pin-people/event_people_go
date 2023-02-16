@@ -18,12 +18,12 @@ As of today EventPeople uses RabbitMQ as its datasource, but there are plans to 
 Add this line to your application's `go.mod`:
 
 ```yaml
-require github.com/pinpeople/event-people-go
+require github.com/pin-people/event-people-go
 ```
 
 To install and add it as a dependency in your project:
 
-    $ go get "github.com/pinpeople/event-people-go"
+    $ go get "github.com/pin-people/event-people-go"
 
 Set env vars and execute init function:
 
@@ -51,7 +51,7 @@ It has 2 attributes `name` and `payload`:
 
 ```golang
 import (
-  EventPeople "github.com/pinpeople/event-people-go"
+  EventPeople "github.com/pin-people/event-people-go"
 )
 
 type BodyStructure struct {
@@ -80,7 +80,7 @@ You can emit events on your project passing an `EventPeople.Event` instance to t
 ```golang
 import (
   "encoding/json"
-  EventPeople "github.com/pinpeople/event-people-go"
+  EventPeople "github.com/pin-people/event-people-go"
 )
 
 type BodyStructureEmmiter struct {
@@ -125,7 +125,7 @@ Given you want to consume a single event inside your project you can use the `Ev
 ```golang
 import (
   "fmt"
-  EventPeople "github.com/pinpeople/event-people-go"
+  EventPeople "github.com/pin-people/event-people-go"
 )
 
 func main() {
@@ -154,7 +154,7 @@ You can also receive all available messages using a channel and time sleep:
 ```golang
 import (
   "fmt"
-  EventPeople "github.com/pinpeople/event-people-go"
+  EventPeople "github.com/pin-people/event-people-go"
 )
 var once = make(chan int)
 
@@ -193,7 +193,7 @@ import (
 	"fmt"
 	"os"
 
-	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
+	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
 )
 
 func init() {
@@ -276,7 +276,7 @@ import (
 	"fmt"
 	"os"
 
-	EventPeople "github.com/pinpeople/event_people_go/lib/event_people"
+	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
 )
 
 func init() {
