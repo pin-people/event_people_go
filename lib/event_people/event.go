@@ -20,7 +20,7 @@ type Headers struct {
 type Event struct {
 	Name          string  `json:"name"`
 	Headers       Headers `json:"headers"`
-	Body          string  `json:"body"`
+	Body          any     `json:"body"`
 	SchemaVersion float64 `json:"schemaVersion"`
 }
 
@@ -97,7 +97,7 @@ func (event *Event) GetEventName() string {
 }
 
 func (event *Event) SetStructBody(body any) {
-	err := json.Unmarshal([]byte(event.Body), &body)
+	err := json.Unmarshal([]byte(structToJsonString(event.Body)), &body)
 	FailOnError(err, "Error on unmarchal struct")
 }
 
