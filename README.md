@@ -24,7 +24,7 @@ require github.com/pin-people/event_people_go
 To install and add it as a dependency in your project:
 
 ```cmd
-   $ go get "github.com/pin-people/event-people-go"
+   $ go get "github.com/pin-people/event_people_go"
 ```
 
 You need to install in mode proxy, to this use:
