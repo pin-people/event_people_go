@@ -50,7 +50,7 @@ func (queue *Queue) callback(deliveries <-chan amqp.Delivery, callback Callback)
 		eventMessage.Name = eventMessage.Headers.AppName
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
-		callback(eventMessage, NewContext(&delivery))
+		callback(eventMessage, NewContext(delivery))
 	}
 }
 
