@@ -1,8 +1,6 @@
 package EventPeople
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 
@@ -30,8 +28,19 @@ func (queue *Queue) Init(channel *amqp.Channel) {
 	queue.channel = channel
 }
 
-func (queue *Queue) Subscribe(routingKey string, callback Callback) {
-	queue.createQueueAndBind(routingKey, callback)
+func (queue *Queue) Subscribe(routingKey string) {
+	queue.createQueueAndBind(routingKey)
+}
+
+func (queue *Queue) Consume(routingKey string) *amqp.Delivery {
+	queueName := queue.queueNameByRoutingKey(routingKey)
+	queue.inspectQueue(queueName)
+	delivery, ok, err := queue.channel.Get(queueName, false)
+	FailOnError(err, "Failed to consume a queue")
+	if ok {
+		return &delivery
+	}
+	return nil
 }
 
 func (queue *Queue) GetConsumers() int {
@@ -42,20 +51,14 @@ func (queue *Queue) QueueName(routingKey string) string {
 	return queue.amqpQueue.Name
 }
 
-func (queue *Queue) callback(deliveries <-chan amqp.Delivery, callback Callback) {
-	for delivery := range deliveries {
-		var eventMessage Event
-		json.Unmarshal(delivery.Body, &eventMessage)
-
-		eventMessage.Name = eventMessage.Headers.AppName
-		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
-
-		callback(eventMessage, NewContext(&delivery))
-	}
-}
-
 func (queue *Queue) createQueue(queueName string) {
 	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
+	FailOnError(err, "Failed to declare a queue")
+	queue.amqpQueue = &localQueue
+}
+
+func (queue *Queue) inspectQueue(queueName string) {
+	localQueue, err := queue.channel.QueueInspect(queueName)
 	FailOnError(err, "Failed to declare a queue")
 	queue.amqpQueue = &localQueue
 }
@@ -68,13 +71,13 @@ func (queue *Queue) exchangeBind(queueName string, routingKey string) {
 	FailOnError(err, "Failed to bind queue to exchange")
 }
 
-func (queue *Queue) createQueueAndBind(routingKey string, callback Callback) {
-	eventNameSplited := strings.Split(routingKey, ".")
-	queueName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")
+func (queue *Queue) createQueueAndBind(routingKey string) {
+	queueName := queue.queueNameByRoutingKey(routingKey)
 	queue.createQueue(queueName)
 	queue.exchangeBind(queueName, routingKey)
-	messages, err := queue.channel.Consume(queueName, "", false, false, false, false, nil)
-	FailOnError(err, "Failed to consume a queue")
-	go queue.callback(messages, callback)
-	fmt.Printf("Event People consuming %s Queue!\n", queue.amqpQueue.Name)
+}
+
+func (queue *Queue) queueNameByRoutingKey(routingKey string) string {
+	eventNameSplited := strings.Split(routingKey, ".")
+	return os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")
 }

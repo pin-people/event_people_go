@@ -46,7 +46,3 @@ func RunEmitter() {
 	EventPeople.TriggerEmitter([]*EventPeople.Event{singleEvent})
 	EventPeople.Config.CloseConnection()
 }
-
-func main() {
-	RunEmitter()
-}

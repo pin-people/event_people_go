@@ -45,6 +45,7 @@ Set env vars and execute init function:
 
 ```golang
 func init() {
+	os.Setenv("WORKERS", "4")
 	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
 	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
 	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
@@ -86,7 +87,7 @@ func main() {
 There are 3 main interfaces to use `EventPeople` on your project:
 
 -   Calling `EventPeople.TriggerEmitter(event []*EventPeople.Event)` inside your project;
--   Calling `EventPeople.ListenTo(eventName string)` inside your project;
+-   Calling `EventPeople.GetMessageWithCallback(eventName string)` inside your project;
 -   Or extending `EventPeople.BaseListener` and use it as a daemon.
 
 ### Using the Emitter
@@ -136,7 +137,7 @@ Other important aspect of event consumming is the result of the processing we pr
 -   `Fail:` should be called when an error ocurred processing the event and the message should be requeued;
 -   `Reject:` should be called whenever a message should be discarded without being processed.
 
-Given you want to consume a single event inside your project you can use the `EventPeople.ListenTo` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
+Given you want to consume a single event inside your project you can use the `EventPeople.GetMessageWithCallback` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
 
 ```golang
 import (
@@ -150,7 +151,7 @@ func main() {
   var eventName = "payment.payments.pay"
   var once = make(chan int)
 
-  EventPeople.ListenTo(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
+  EventPeople.GetMessageWithCallback(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
     msg := event.Body
 
 		fmt.Println("")
@@ -177,7 +178,7 @@ var once = make(chan int)
 func main() {
   var eventName = "payment.payments.pay.all"
 
-	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
+	EventPeople.GetMessageWithCallback(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
 		msg := event.Body
 
 		fmt.Println("")
@@ -236,11 +237,7 @@ type SecondPrivateMessageDaemon struct {
 	Dy string `json:"dy"`
 }
 
-type CustomEventListener struct {
-	EventPeople.BaseListener
-}
-
-func (cel *CustomEventListener) pay(event EventPeople.Event) {
+func pay(event EventPeople.Event, cel EventPeople.ContextInterface) {
 	var bodyDaemon = new(BodyStructureDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -248,7 +245,7 @@ func (cel *CustomEventListener) pay(event EventPeople.Event) {
 	cel.Success()
 }
 
-func (cel *CustomEventListener) receive(event EventPeople.Event) {
+func receive(event EventPeople.Event, cel EventPeople.ContextInterface) {
 	var bodyDaemon = new(BodyStructureDaemon)
   event.SetStructBody(&bodyDaemon)
 
@@ -261,7 +258,7 @@ func (cel *CustomEventListener) receive(event EventPeople.Event) {
 	cel.Success()
 }
 
-func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
+func privateChannel(event EventPeople.Event, cel EventPeople.ContextInterface) {
 	var bodyDaemon = new(PrivateMessageDaemon)
   event.SetStructBody(&bodyDaemon)
 
@@ -270,11 +267,10 @@ func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 }
 
 func main() {
-  custom := new(CustomEventListener)
-	custom.BindEvent("pay", "resource.custom.pay")
-	custom.BindEvent("receive", "resource.custom.receive")
-	custom.BindEvent("privateChannel", "resource.custom.private.service")
-	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
+	EventPeople.BindEvent(pay, "resource.custom.pay")
+	EventPeople.BindEvent(receive, "resource.custom.receive")
+	EventPeople.BindEvent(privateChannel, "resource.custom.private.service")
+	EventPeople.BindEvent(secondPrivateChannel, "resource.origin.action.service")
 
 	EventPeople.DaemonStart()
 }
@@ -319,11 +315,7 @@ type SecondPrivateMessageDaemon struct {
 	Dy string `json:"dy"`
 }
 
-type CustomEventListener struct {
-	EventPeople.BaseListener
-}
-
-func (cel *CustomEventListener) pay(event EventPeople.Event) {
+func pay(event EventPeople.Event, cel *CustomEventListener) {
 	var bodyDaemon = new(BodyStructureDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -331,7 +323,7 @@ func (cel *CustomEventListener) pay(event EventPeople.Event) {
 	cel.Success()
 }
 
-func (cel *CustomEventListener) receive(event EventPeople.Event) {
+func receive(event EventPeople.Event, cel *CustomEventListener) {
 	var bodyDaemon = new(BodyStructureDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -344,7 +336,7 @@ func (cel *CustomEventListener) receive(event EventPeople.Event) {
 	cel.Success()
 }
 
-func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
+func privateChannel(event EventPeople.Event, cel *CustomEventListener) {
 	var bodyDaemon = new(PrivateMessageDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -353,11 +345,10 @@ func (cel *CustomEventListener) privateChannel(event EventPeople.Event) {
 }
 
 func main() {
-  custom := new(CustomEventListener)
-	custom.BindEvent("pay", "resource.custom.pay")
-	custom.BindEvent("receive", "resource.custom.receive")
-	custom.BindEvent("privateChannel", "resource.custom.private.service")
-	custom.BindEvent("secondPrivateChannel", "resource.origin.action.service")
+  	EventPeople.BindEvent(pay, "resource.custom.pay")
+	EventPeople.BindEvent(receive, "resource.custom.receive")
+	EventPeople.BindEvent(privateChannel, "resource.custom.private.service")
+	EventPeople.BindEvent(secondPrivateChannel, "resource.origin.action.service")
 
 	EventPeople.DaemonStart()
 }
