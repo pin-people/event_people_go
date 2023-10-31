@@ -1,7 +1,20 @@
 package EventPeople
 
 type ContextInterface interface {
-    Success()
-    Fail()
-    Reject()
+	Initialize(DeliveryInterface)
+	Success()
+	Fail()
+	Reject()
+}
+
+type DeliveryInterface interface {
+	Ack(bool) error
+	Nack(bool, bool) error
+	Reject(bool) error
+}
+
+type DeliveryStruct struct {
+	DeliveryInterface
+	DeliveryTag uint64
+	Body        []byte
 }

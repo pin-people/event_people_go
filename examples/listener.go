@@ -30,8 +30,8 @@ func listenerCallback(event EventPeople.Event, context EventPeople.ContextInterf
 var twice = make(chan int)
 
 func RunListener() {
-	EventPeople.ListenTo("resource.custom.*", listenerCallback)
-	EventPeople.ListenTo("resource.origin.*", listenerCallback)
+	EventPeople.GetMessageWithCallback("resource.custom.*", listenerCallback)
+	EventPeople.GetMessageWithCallback("resource.origin.*", listenerCallback)
 	<-twice
 	<-twice
 	EventPeople.Config.CloseConnection()
@@ -39,10 +39,10 @@ func RunListener() {
 
 var once = make(chan int)
 
-func main() {
+func RunSingleListener() {
 	var eventName = "payment.payments.pay.service"
 
-	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.ContextInterface) {
+	EventPeople.GetMessageWithCallback(eventName, func(event EventPeople.Event, context EventPeople.ContextInterface) {
 		msg := event.Body
 
 		fmt.Println("")

@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
 )
 
 func init() {
+	os.Setenv("WORKERS", "4")
 	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service_name")
 	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
 	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
@@ -26,40 +28,35 @@ type PrivateMessageDaemon struct {
 	Message string `json:"message"`
 }
 
-type CustomEventListener struct {
-	EventPeople.BaseListener
-}
-
-func (custom *CustomEventListener) pay(event EventPeople.Event) {
+func pay(event EventPeople.Event, custom EventPeople.ContextInterface) {
 	var bodyDaemon = BodyStructureDaemon{}
 	event.SetStructBody(&bodyDaemon)
-
-	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
+	fmt.Println(fmt.Sprintf("%v : Paid %v for %s ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
 	custom.Success()
 }
 
-func (custom *CustomEventListener) receive(event EventPeople.Event) {
+func receive(event EventPeople.Event, custom EventPeople.ContextInterface) {
 	var bodyDaemon = BodyStructureDaemon{}
 	event.SetStructBody(&bodyDaemon)
 
 	if bodyDaemon.Amount < 500 {
-		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
+		fmt.Println(fmt.Sprintf("%v : [consumer] Got SKIPPED message:\n%d from %s ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
 		custom.Reject()
 		return
 	}
-	fmt.Println(fmt.Sprintf("Received %d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
+	fmt.Println(fmt.Sprintf("%v : Received %d from %s ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
 	custom.Success()
 }
 
-func (custom *CustomEventListener) privateChannel(event EventPeople.Event) {
+func privateChannel(event EventPeople.Event, custom EventPeople.ContextInterface) {
 	var bodyDaemon = PrivateMessageDaemon{}
 	event.SetStructBody(&bodyDaemon)
 
-	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: \"%s\" ~> %s", bodyDaemon.Message, event.GetEventName()))
+	fmt.Println(fmt.Sprintf("%v : [Consumer] Got a private message: \"%s\" ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Message, event.GetEventName()))
 	custom.Success()
 }
 
-func (custom *CustomEventListener) ignoreMe(event EventPeople.Event) {
+func ignoreMe(event EventPeople.Event, custom EventPeople.ContextInterface) {
 	var bodyDaemon = PrivateMessageDaemon{}
 	event.SetStructBody(&bodyDaemon)
 
@@ -69,11 +66,10 @@ func (custom *CustomEventListener) ignoreMe(event EventPeople.Event) {
 }
 
 func RunDaemon() {
-	custom := new(CustomEventListener)
-	custom.BindEvent(custom.pay, "resource.*.pay")
-	custom.BindEvent(custom.receive, "resource.custom.receive")
-	custom.BindEvent(custom.privateChannel, "resource.custom.private.service")
-	custom.BindEvent(custom.ignoreMe, "resource.custom.ignored.other_service")
+	EventPeople.BindEvent(pay, "resource.*.pay")
+	EventPeople.BindEvent(receive, "resource.custom.receive")
+	EventPeople.BindEvent(privateChannel, "resource.custom.private.service")
+	EventPeople.BindEvent(ignoreMe, "resource.custom.ignored.other_service")
 
 	EventPeople.DaemonStart()
 }
