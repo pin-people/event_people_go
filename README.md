@@ -315,7 +315,7 @@ type SecondPrivateMessageDaemon struct {
 	Dy string `json:"dy"`
 }
 
-func pay(event EventPeople.Event, cel *CustomEventListener) {
+func pay(event EventPeople.Event, cel EventPeople.BaseListener) {
 	var bodyDaemon = new(BodyStructureDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -323,7 +323,7 @@ func pay(event EventPeople.Event, cel *CustomEventListener) {
 	cel.Success()
 }
 
-func receive(event EventPeople.Event, cel *CustomEventListener) {
+func receive(event EventPeople.Event, cel EventPeople.BaseListener) {
 	var bodyDaemon = new(BodyStructureDaemon)
 	event.SetStructBody(&bodyDaemon)
 
@@ -336,7 +336,7 @@ func receive(event EventPeople.Event, cel *CustomEventListener) {
 	cel.Success()
 }
 
-func privateChannel(event EventPeople.Event, cel *CustomEventListener) {
+func privateChannel(event EventPeople.Event, cel EventPeople.BaseListener) {
 	var bodyDaemon = new(PrivateMessageDaemon)
 	event.SetStructBody(&bodyDaemon)
 
