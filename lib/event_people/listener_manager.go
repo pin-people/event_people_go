@@ -3,6 +3,7 @@ package EventPeople
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -41,8 +42,9 @@ func (manager manager) BindAllListeners() {
 func (manager manager) ConsumeAllListeners() {
 	workerPool, _ := strconv.Atoi(os.Getenv("WORKERS"))
 	if workerPool == 0 {
-		workerPool = 4
+		workerPool = runtime.NumCPU() * 2
 	}
+	fmt.Println("Starting worker pool with", workerPool, "workers")
 	Pool = worker.NewWorkerPool(workerPool)
 	Pool.Start()
 

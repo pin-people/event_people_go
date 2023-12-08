@@ -1,3 +1,4 @@
+// Package EventPeople is used to run lib
 package EventPeople
 
 import "encoding/json"
@@ -6,7 +7,8 @@ func GetMessage(eventName string) *DeliveryStruct {
 	return Config.Broker.Consume(eventName)
 }
 
-func GetMessageWithCallback(eventName string, callback Callback) {
+/* ListenTo is a function that receives an event name and a callback function.*/
+func ListenTo(eventName string, callback Callback) {
 	delivery := Config.Broker.Consume(eventName)
 	if delivery != nil && len(delivery.Body) == 0 {
 		var eventMessage Event
