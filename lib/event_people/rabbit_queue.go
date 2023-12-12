@@ -22,6 +22,7 @@ type QueueInterface interface {
 type Queue struct {
 	amqpQueue *amqp.Queue
 	channel   *amqp.Channel
+	queueInfo []QueueInfo
 	QueueInterface
 }
 
@@ -76,10 +77,25 @@ func (queue *Queue) createQueue(queueName string) {
 		}
 	}
 
+	for _, item := range queue.queueInfo {
+		if item.Name == queueName {
+			if len(item.Args) != len(args) {
+				break
+			}
+			for key, value := range args {
+				if item.Args[key] != value {
+					break
+				}
+			}
+			return
+		}
+	}
+
 	inspectedQueue, err := queue.channel.QueueInspect(queueName)
 	if inspectedQueue.Messages > 0 {
 		return
 	}
+
 	queue.channel.QueueDelete(queueName, false, false, false)
 	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, args)
 	FailOnError(err, "Failed to declare a queue")

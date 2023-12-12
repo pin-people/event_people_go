@@ -1,19 +1,30 @@
 package EventPeople
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+type QueueInfo struct {
+	Name     string                 `json:"name"`
+	Messages int                    `json:"messages"`
+	Args     map[string]interface{} `json:"arguments"`
+}
 
 type RabbitBroker struct {
 	queue       Queue
 	topic       Topic
 	connection  *amqp.Connection
 	amqpChannel *amqp.Channel
+	queuesInfo  []QueueInfo
 	*BaseBroker
 }
 
@@ -22,6 +33,7 @@ func (rabbit *RabbitBroker) Init() {
 	FailOnError(err, "Failed to connect to RabbitMQ")
 	rabbit.connection = connection
 	rabbit.topic = Topic{}
+	rabbit.queuesInfo = rabbit.getQueuesInformation()
 }
 
 func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
@@ -52,7 +64,10 @@ func (rabbit *RabbitBroker) Subscribe(eventName string) {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = Queue{channel: rabbit.amqpChannel}
+	rabbit.queue = Queue{
+		channel:   rabbit.amqpChannel,
+		queueInfo: rabbit.queuesInfo,
+	}
 	if eventName == dlxEventName {
 		rabbit.queue.CreateDLX()
 		return
@@ -69,7 +84,10 @@ func (rabbit *RabbitBroker) Consume(eventName string) *DeliveryStruct {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = Queue{channel: rabbit.amqpChannel}
+	rabbit.queue = Queue{
+		channel:   rabbit.amqpChannel,
+		queueInfo: rabbit.queuesInfo,
+	}
 	delivery := rabbit.queue.Consume(eventName)
 	if delivery == nil {
 		return nil
@@ -94,4 +112,40 @@ func (rabbit *RabbitBroker) RabbitURL() string {
 
 func (rabbit *RabbitBroker) CloseConnection() {
 	rabbit.connection.Close()
+}
+
+func (rabbit *RabbitBroker) getQueuesInformation() []QueueInfo {
+	rabbitUrl := strings.ReplaceAll(os.Getenv("RABBIT_URL"), "amqp://", "")
+	splittedRabbitUrl := strings.Split(rabbitUrl, "@")
+	usernameAndPassword := strings.Split(splittedRabbitUrl[0], ":")
+	username := usernameAndPassword[0]
+	password := usernameAndPassword[1]
+	splittedHost := strings.Split(splittedRabbitUrl[1], ":")
+	host := splittedHost[0]
+	rabbitMQURL := fmt.Sprintf("http://%s:15672/api/queues/%s", host, os.Getenv("RABBIT_EVENT_PEOPLE_VHOST"))
+
+	req, err := http.NewRequest("GET", rabbitMQURL, nil)
+	if err != nil {
+		log.Fatalf("Erro ao criar a solicitação HTTP: %s", err)
+	}
+
+	req.SetBasicAuth(username, password)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("HTTP Request error: %s", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("Fail getting queue informations: %s", resp.Status)
+	}
+
+	var queues []QueueInfo
+	err = json.NewDecoder(resp.Body).Decode(&queues)
+	if err != nil {
+		log.Fatalf("Error on json decode JSON: %s", err)
+	}
+	return queues
 }
