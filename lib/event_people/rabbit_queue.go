@@ -1,6 +1,7 @@
 package EventPeople
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -51,8 +52,36 @@ func (queue *Queue) QueueName(routingKey string) string {
 	return queue.amqpQueue.Name
 }
 
+func (queue *Queue) CreateDLX() {
+	exchangeDlxName := queue.getExchangeDlxName()
+	dlxQueueName := queue.getQueueDlxName()
+	_, err := queue.channel.QueueDeclare(dlxQueueName, true, false, false, false, nil)
+	FailOnError(err, "Failed to declare a queue")
+
+	err = queue.channel.ExchangeDeclare(exchangeDlxName, "topic", true, false, false, false, nil)
+	FailOnError(err, "Failed to declare an exchange")
+
+	dlxRoutingKey := queue.getRoutingKeyDlxName()
+	queue.channel.QueueBind(dlxQueueName, dlxRoutingKey, exchangeDlxName, false, nil)
+}
+
 func (queue *Queue) createQueue(queueName string) {
-	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
+	args := amqp.Table{}
+	if Config.UseDLX {
+		exchangeDlxName := queue.getExchangeDlxName()
+		dlxRoutingKey := queue.getRoutingKeyDlxName()
+		args = amqp.Table{
+			"x-dead-letter-exchange":    exchangeDlxName,
+			"x-dead-letter-routing-key": dlxRoutingKey,
+		}
+	}
+
+	inspectedQueue, err := queue.channel.QueueInspect(queueName)
+	if inspectedQueue.Messages > 0 {
+		return
+	}
+	queue.channel.QueueDelete(queueName, false, false, false)
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, args)
 	FailOnError(err, "Failed to declare a queue")
 	queue.amqpQueue = &localQueue
 }
@@ -64,7 +93,7 @@ func (queue *Queue) inspectQueue(queueName string) {
 }
 
 func (queue *Queue) exchangeBind(queueName string, routingKey string) {
-	err := queue.channel.ExchangeDeclarePassive(os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), "topic", true, false, false, false, nil)
+	err := queue.channel.ExchangeDeclare(os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), "topic", true, false, false, false, nil)
 	FailOnError(err, "Failed to declare an exchange")
 
 	queue.channel.QueueBind(queueName, routingKey, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), false, nil)
@@ -80,4 +109,16 @@ func (queue *Queue) createQueueAndBind(routingKey string) {
 func (queue *Queue) queueNameByRoutingKey(routingKey string) string {
 	eventNameSplited := strings.Split(routingKey, ".")
 	return os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")
+}
+
+func (queue *Queue) getExchangeDlxName() string {
+	return fmt.Sprintf("%s_DLX", os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"))
+}
+
+func (queue *Queue) getQueueDlxName() string {
+	return fmt.Sprintf("%s.%s.dlx", os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME"), os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"))
+}
+
+func (queue *Queue) getRoutingKeyDlxName() string {
+	return fmt.Sprintf("%s.%s.dlx", os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME"), os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"))
 }

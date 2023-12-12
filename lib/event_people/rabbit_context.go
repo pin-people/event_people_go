@@ -14,7 +14,7 @@ func (context *RabbitContext) Success() {
 }
 
 func (context *RabbitContext) Fail() {
-	context.delivery.Nack(false, true)
+	context.delivery.Nack(false, false)
 }
 
 func (context *RabbitContext) Reject() {

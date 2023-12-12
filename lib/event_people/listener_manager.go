@@ -31,7 +31,12 @@ var ListenerConfigurationsList []ListenerManagerStruct
 
 var Pool *worker.Pool
 
+var dlxEventName = "**DLX**"
+
 func (manager manager) BindAllListeners() {
+	if Config.UseDLX {
+		SubscribeTo(dlxEventName)
+	}
 	for index := range ListenerConfigurationsList {
 		listenerItem := ListenerConfigurationsList[index]
 		fmt.Println("Bind Event EventName =>", listenerItem.EventName)

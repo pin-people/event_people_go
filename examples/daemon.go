@@ -17,6 +17,7 @@ func init() {
 	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
 
 	EventPeople.Config.Init()
+	EventPeople.Config.UseDLX = true
 }
 
 type BodyStructureDaemon struct {
@@ -41,7 +42,7 @@ func receive(event EventPeople.Event, custom EventPeople.ContextInterface) {
 
 	if bodyDaemon.Amount < 500 {
 		fmt.Println(fmt.Sprintf("%v : [consumer] Got SKIPPED message:\n%d from %s ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))
-		custom.Reject()
+		custom.Fail()
 		return
 	}
 	fmt.Println(fmt.Sprintf("%v : Received %d from %s ~> %s", time.Now().Format("2006-01-02 15:04:05"), bodyDaemon.Amount, bodyDaemon.Name, event.GetEventName()))

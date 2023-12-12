@@ -3,6 +3,8 @@ package EventPeople
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -31,10 +33,14 @@ func (rabbit *RabbitBroker) GetConsumers() int {
 }
 
 func (rabbit *RabbitBroker) Channel() {
+	workerPool, _ := strconv.Atoi(os.Getenv("WORKERS"))
+	if workerPool == 0 {
+		workerPool = runtime.NumCPU() * 2
+	}
 	channel, err := rabbit.connection.Channel()
 	FailOnError(err, "Failed to open a channel")
 	rabbit.amqpChannel = channel
-	rabbit.amqpChannel.Qos(1, 0, false)
+	rabbit.amqpChannel.Qos(workerPool, 0, false)
 	rabbit.topic.Init(rabbit.amqpChannel)
 }
 
@@ -47,7 +53,12 @@ func (rabbit *RabbitBroker) Subscribe(eventName string) {
 		rabbit.Channel()
 	}
 	rabbit.queue = Queue{channel: rabbit.amqpChannel}
+	if eventName == dlxEventName {
+		rabbit.queue.CreateDLX()
+		return
+	}
 	rabbit.queue.Subscribe(eventName)
+
 }
 
 func (rabbit *RabbitBroker) Consume(eventName string) *DeliveryStruct {
