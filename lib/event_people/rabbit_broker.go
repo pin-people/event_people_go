@@ -86,7 +86,7 @@ func (rabbit *RabbitBroker) Consume(eventName string) *DeliveryStruct {
 	}
 	rabbit.queue = Queue{
 		channel:   rabbit.amqpChannel,
-		queueInfo: rabbit.queuesInfo,
+		queueInfo: []QueueInfo{},
 	}
 	delivery := rabbit.queue.Consume(eventName)
 	if delivery == nil {
@@ -115,14 +115,15 @@ func (rabbit *RabbitBroker) CloseConnection() {
 }
 
 func (rabbit *RabbitBroker) getQueuesInformation() []QueueInfo {
-	rabbitUrl := strings.ReplaceAll(os.Getenv("RABBIT_URL"), "amqp://", "")
+	if os.Getenv("RABBIT_HTTP_URL") == "" {
+		return []QueueInfo{}
+	}
+	rabbitUrl := strings.Split(os.Getenv("RABBIT_URL"), "://")[1]
 	splittedRabbitUrl := strings.Split(rabbitUrl, "@")
 	usernameAndPassword := strings.Split(splittedRabbitUrl[0], ":")
 	username := usernameAndPassword[0]
 	password := usernameAndPassword[1]
-	splittedHost := strings.Split(splittedRabbitUrl[1], ":")
-	host := splittedHost[0]
-	rabbitMQURL := fmt.Sprintf("http://%s:15672/api/queues/%s", host, os.Getenv("RABBIT_EVENT_PEOPLE_VHOST"))
+	rabbitMQURL := fmt.Sprintf("%s/queues/%s", os.Getenv("RABBIT_HTTP_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST"))
 
 	req, err := http.NewRequest("GET", rabbitMQURL, nil)
 	if err != nil {

@@ -37,6 +37,9 @@ func (queue *Queue) Subscribe(routingKey string) {
 func (queue *Queue) Consume(routingKey string) *amqp.Delivery {
 	queueName := queue.queueNameByRoutingKey(routingKey)
 	queue.inspectQueue(queueName)
+	if queue.amqpQueue.Messages == 0 {
+		return nil
+	}
 	delivery, ok, err := queue.channel.Get(queueName, false)
 	FailOnError(err, "Failed to consume a queue")
 	if ok {
@@ -74,6 +77,7 @@ func (queue *Queue) createQueue(queueName string) {
 		args = amqp.Table{
 			"x-dead-letter-exchange":    exchangeDlxName,
 			"x-dead-letter-routing-key": dlxRoutingKey,
+			"x-queue-type":              "classic",
 		}
 	}
 
