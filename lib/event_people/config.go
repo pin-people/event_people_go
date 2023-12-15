@@ -5,11 +5,10 @@ type configStruct struct {
 	UseDLX bool
 }
 
-var Config = new(configStruct)
+var Config = configStruct{Broker: nil, UseDLX: false}
 
 func (config *configStruct) Init() {
 	Config.Broker = new(RabbitBroker)
-	Config.UseDLX = false
 	Config.Broker.Init()
 }
 
