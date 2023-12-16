@@ -28,19 +28,15 @@ func (queue *Queue) Init(channel *amqp.Channel) {
 	queue.channel = channel
 }
 
-func (queue *Queue) Subscribe(routingKey string) {
-	queue.createQueueAndBind(routingKey)
+func (queue *Queue) Subscribe(routingKey string) error {
+	return queue.createQueueAndBind(routingKey)
 }
 
-func (queue *Queue) Consume(routingKey string) *amqp.Delivery {
+func (queue *Queue) Consume(routingKey string) (<-chan amqp.Delivery, error) {
 	queueName := queue.queueNameByRoutingKey(routingKey)
 	queue.inspectQueue(queueName)
-	delivery, ok, err := queue.channel.Get(queueName, false)
-	FailOnError(err, "Failed to consume a queue")
-	if ok {
-		return &delivery
-	}
-	return nil
+	queue.channel.Qos(workerPool, 0, false)
+	return queue.channel.Consume(queueName, "", false, false, false, false, nil)
 }
 
 func (queue *Queue) GetConsumers() int {
@@ -51,30 +47,46 @@ func (queue *Queue) QueueName(routingKey string) string {
 	return queue.amqpQueue.Name
 }
 
-func (queue *Queue) createQueue(queueName string) {
+func (queue *Queue) createQueue(queueName string) error {
 	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
-	FailOnError(err, "Failed to declare a queue")
+	if err != nil {
+		return err
+	}
 	queue.amqpQueue = &localQueue
+	return nil
 }
 
-func (queue *Queue) inspectQueue(queueName string) {
+func (queue *Queue) inspectQueue(queueName string) error {
 	localQueue, err := queue.channel.QueueInspect(queueName)
-	FailOnError(err, "Failed to declare a queue")
+	if err != nil {
+		return err
+	}
 	queue.amqpQueue = &localQueue
+	return nil
 }
 
-func (queue *Queue) exchangeBind(queueName string, routingKey string) {
+func (queue *Queue) exchangeBind(queueName string, routingKey string) error {
 	err := queue.channel.ExchangeDeclarePassive(os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), "topic", true, false, false, false, nil)
-	FailOnError(err, "Failed to declare an exchange")
+	if err != nil {
+		return err
+	}
 
-	queue.channel.QueueBind(queueName, routingKey, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), false, nil)
-	FailOnError(err, "Failed to bind queue to exchange")
+	err = queue.channel.QueueBind(queueName, routingKey, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), false, nil)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (queue *Queue) createQueueAndBind(routingKey string) {
+func (queue *Queue) createQueueAndBind(routingKey string) error {
 	queueName := queue.queueNameByRoutingKey(routingKey)
-	queue.createQueue(queueName)
-	queue.exchangeBind(queueName, routingKey)
+	err := queue.createQueue(queueName)
+	if err != nil {
+		return err
+	}
+	err = queue.exchangeBind(queueName, routingKey)
+	return err
 }
 
 func (queue *Queue) queueNameByRoutingKey(routingKey string) string {

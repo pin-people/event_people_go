@@ -1,6 +1,7 @@
 package EventPeople
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -15,11 +16,14 @@ type RabbitBroker struct {
 	*BaseBroker
 }
 
-func (rabbit *RabbitBroker) Init() {
+func (rabbit *RabbitBroker) Init() error {
 	connection, err := amqp.Dial(rabbit.RabbitURL())
-	FailOnError(err, "Failed to connect to RabbitMQ")
+	if err != nil {
+		return err
+	}
 	rabbit.connection = connection
 	rabbit.topic = Topic{}
+	return nil
 }
 
 func (rabbit *RabbitBroker) GetConnection() amqp.Connection {
@@ -30,15 +34,18 @@ func (rabbit *RabbitBroker) GetConsumers() int {
 	return rabbit.queue.GetConsumers()
 }
 
-func (rabbit *RabbitBroker) Channel() {
+func (rabbit *RabbitBroker) Channel() error {
 	channel, err := rabbit.connection.Channel()
-	FailOnError(err, "Failed to open a channel")
+	if err != nil {
+		return err
+	}
 	rabbit.amqpChannel = channel
 	rabbit.amqpChannel.Qos(1, 0, false)
 	rabbit.topic.Init(rabbit.amqpChannel)
+	return nil
 }
 
-func (rabbit *RabbitBroker) Subscribe(eventName string) {
+func (rabbit *RabbitBroker) Subscribe(eventName string) error {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -47,10 +54,10 @@ func (rabbit *RabbitBroker) Subscribe(eventName string) {
 		rabbit.Channel()
 	}
 	rabbit.queue = Queue{channel: rabbit.amqpChannel}
-	rabbit.queue.Subscribe(eventName)
+	return rabbit.queue.Subscribe(eventName)
 }
 
-func (rabbit *RabbitBroker) Consume(eventName string) *DeliveryStruct {
+func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -58,15 +65,26 @@ func (rabbit *RabbitBroker) Consume(eventName string) *DeliveryStruct {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = Queue{channel: rabbit.amqpChannel}
-	delivery := rabbit.queue.Consume(eventName)
-	if delivery == nil {
-		return nil
+	queue := Queue{channel: rabbit.amqpChannel}
+	deliveries, err := queue.Consume(eventName)
+
+	if err != nil {
+		fmt.Println(err)
 	}
-	return &DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag}
+	for delivery := range deliveries {
+		var eventMessage Event
+		json.Unmarshal(delivery.Body, &eventMessage)
+
+		eventMessage.Name = eventMessage.Headers.AppName
+		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
+		deliveryStruct := DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag}
+		rabbitContext := NewContext(delivery)
+		rabbitContext.DeliveryStruct = deliveryStruct
+		callback(eventMessage, rabbitContext)
+	}
 }
 
-func (rabbit *RabbitBroker) Produce(event Event) {
+func (rabbit *RabbitBroker) Produce(event Event) error {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -74,7 +92,7 @@ func (rabbit *RabbitBroker) Produce(event Event) {
 	rabbit.Channel()
 
 	rabbit.topic.Init(rabbit.amqpChannel)
-	rabbit.topic.Produce(event)
+	return rabbit.topic.Produce(event)
 }
 
 func (rabbit *RabbitBroker) RabbitURL() string {

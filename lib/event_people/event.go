@@ -35,10 +35,15 @@ func NewEvent(name string, body any, schemaVersion ...float64) *Event {
 	return event
 }
 
-func (event *Event) Initialize(name string, body any, schemaVersion ...float64) {
+func (event *Event) Initialize(name string, body any, schemaVersion ...float64) error {
 	event.Name = name
 	event.SchemaVersion = 1.0
-	event.Body = structToJsonString(body)
+	jsonString, err := structToJsonString(body)
+	if err != nil {
+		return err
+	}
+
+	event.Body = jsonString
 
 	if schemaVersion != nil {
 		event.SchemaVersion = schemaVersion[0]
@@ -48,9 +53,10 @@ func (event *Event) Initialize(name string, body any, schemaVersion ...float64) 
 		event.generateHeaders()
 		event.fixName()
 	}
+	return nil
 }
 
-func (event *Event) Payload() string {
+func (event *Event) Payload() (string, error) {
 	payload := Payload{
 		event.Headers, event.Body,
 	}
@@ -96,18 +102,27 @@ func (event *Event) GetEventName() string {
 	return event.Headers.Resource + "." + event.Headers.Origin + "." + event.Headers.Action + "." + event.Headers.Destination
 }
 
-func (event *Event) SetStructBody(body any) {
-	err := json.Unmarshal([]byte(structToJsonString(event.Body)), &body)
-	FailOnError(err, "Error on unmarchal struct")
+func (event *Event) SetStructBody(body any) error {
+	jsonString, err := structToJsonString(event.Body)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal([]byte(jsonString), &body)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func structToJsonString(object any) string {
+func structToJsonString(object any) (string, error) {
 	switch object.(type) {
 	case string:
-		return fmt.Sprintf("%v", object)
+		return fmt.Sprintf("%v", object), nil
 	default:
 		jsonBody, err := json.Marshal(object)
-		FailOnError(err, "Error Marshing object")
-		return bytes.NewBuffer(jsonBody).String()
+		if err != nil {
+			return "", err
+		}
+		return bytes.NewBuffer(jsonBody).String(), nil
 	}
 }

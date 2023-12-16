@@ -13,7 +13,7 @@ type Pool struct {
 	quit              chan bool
 }
 
-var mu sync.Mutex
+var mu = &sync.Mutex{}
 var workersInUse = 0
 var maxWorkersInPool = 0
 
@@ -96,6 +96,10 @@ func (q *Pool) RemoveWorkerCount() {
 
 func (q *Pool) IsWorkerAvailable() bool {
 	return workersInUse < maxWorkersInPool
+}
+
+func (q *Pool) GetWorkerStatus() (int, int) {
+	return workersInUse, maxWorkersInPool
 }
 
 /*This is blocking if all workers are busy*/

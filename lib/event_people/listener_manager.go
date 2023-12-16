@@ -30,6 +30,7 @@ var ListenerManager = new(manager)
 var ListenerConfigurationsList []ListenerManagerStruct
 
 var Pool *worker.Pool
+var workerPool int
 
 func (manager manager) BindAllListeners() {
 	for index := range ListenerConfigurationsList {
@@ -40,45 +41,51 @@ func (manager manager) BindAllListeners() {
 }
 
 func (manager manager) ConsumeAllListeners() {
-	workerPool, _ := strconv.Atoi(os.Getenv("WORKERS"))
+	workerPool, _ = strconv.Atoi(os.Getenv("WORKERS"))
 	if workerPool == 0 {
-		workerPool = runtime.NumCPU() * 2
+		workerPool = runtime.NumCPU()
 	}
-	fmt.Println("Starting worker pool with", workerPool, "workers")
 	Pool = worker.NewWorkerPool(workerPool)
 	Pool.Start()
 
-	index := 0
-	maxIndex := len(ListenerConfigurationsList) - 1
-
-	for {
-		if !Pool.IsWorkerAvailable() {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		if index > maxIndex {
-			index = 0
-		}
-
+	for index := range ListenerConfigurationsList {
 		listenerItem := ListenerConfigurationsList[index]
-		delivery := GetMessage(listenerItem.EventName)
-
-		if delivery == nil || len(delivery.Body) == 0 {
-			index++
-			continue
-		}
-
-		Pool.Submit(&Job{
-			job: ContextDelivery{delivery, func(event Event, contextEvent ContextInterface) {
-				listenerItem.Method(event, contextEvent)
-			}},
+		go ListenTo(listenerItem.EventName, func(event Event, context ContextInterface) {
+			for {
+				if !Pool.IsWorkerAvailable() {
+					time.Sleep(2 * time.Second)
+					continue
+				}
+				break
+			}
+			delivery := context.(*RabbitContext)
+			if delivery.DeliveryStruct.DeliveryInterface != nil {
+				go Pool.Submit(&Job{
+					job: ContextDelivery{&delivery.DeliveryStruct, func(event Event, contextEvent ContextInterface) {
+						listenerItem.Method(event, contextEvent)
+					}},
+				})
+				return
+			}
 		})
-		Pool.AddWorkerCount()
-		index++
 	}
 }
 
 func (manager *manager) Register(model ListenerManagerStruct) {
 	ListenerConfigurationsList = append(ListenerConfigurationsList, model)
+}
+
+func printWorkerStatus() {
+	var iterator = 0
+	for {
+		time.Sleep(100 * time.Millisecond)
+		workersInUse, maxWorkersInPool := Pool.GetWorkerStatus()
+		fmt.Printf("\r %d workers in use of %d status [%s]", workersInUse, maxWorkersInPool, getProgress(iterator))
+		iterator++
+	}
+}
+
+func getProgress(iteration int) string {
+	indicators := []string{"-", "\\", "|", "/"}
+	return indicators[iteration%len(indicators)]
 }

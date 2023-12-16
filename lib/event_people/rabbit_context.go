@@ -2,22 +2,23 @@ package EventPeople
 
 type RabbitContext struct {
 	ContextInterface
-	delivery DeliveryInterface
+	delivery       DeliveryInterface
+	DeliveryStruct DeliveryStruct
 }
 
-func (context *RabbitContext) Initialize(delivery DeliveryInterface) {
+func (context RabbitContext) Initialize(delivery DeliveryInterface) {
 	context.delivery = delivery
 }
 
-func (context *RabbitContext) Success() {
+func (context RabbitContext) Success() {
 	context.delivery.Ack(false)
 }
 
-func (context *RabbitContext) Fail() {
+func (context RabbitContext) Fail() {
 	context.delivery.Nack(false, true)
 }
 
-func (context *RabbitContext) Reject() {
+func (context RabbitContext) Reject() {
 	context.delivery.Reject(false)
 }
 

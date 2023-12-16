@@ -26,6 +26,9 @@ func NewWorker(id int, readyPool chan chan Work, done *sync.WaitGroup) *worker {
 
 func (w *worker) Process(work Work) {
 	//Do the work
+	mu.Lock()
+	workersInUse++
+	mu.Unlock()
 	defer func() {
 		if r := recover(); r != nil {
 			const size = 64 << 10
@@ -35,6 +38,9 @@ func (w *worker) Process(work Work) {
 		}
 	}()
 	work.Do()
+	mu.Lock()
+	workersInUse--
+	mu.Unlock()
 }
 
 func (w *worker) Start() {
