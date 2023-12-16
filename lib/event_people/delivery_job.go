@@ -21,5 +21,4 @@ func (j *Job) Do() {
 
 	rabbitContext := NewContext(j.job.delivery.DeliveryInterface)
 	j.job.callback(eventMessage, rabbitContext)
-	Pool.RemoveWorkerCount()
 }

@@ -1,11 +1,12 @@
 package EventPeople
 
-func DaemonStart() {
+func DaemonStart() error {
 	var forever chan struct{}
 	ListenerManager.BindAllListeners()
 	ListenerManager.ConsumeAllListeners()
-	defer Config.Broker.CloseConnection()
+	defer DaemonStop()
 	<-forever
+	return nil
 }
 
 func DaemonStop() {
