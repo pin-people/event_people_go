@@ -66,7 +66,8 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	queue := Queue{channel: rabbit.amqpChannel}
+	channel, err := rabbit.connection.Channel()
+	queue := Queue{channel: channel}
 	deliveries, err := queue.Consume(eventName)
 
 	if err != nil {
