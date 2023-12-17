@@ -74,6 +74,19 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	}
 	channel, err := rabbit.connection.Channel()
 	queue := Queue{channel: channel}
+
+	go func() {
+		for {
+			_, ok := <-channel.NotifyClose(make(chan *amqp.Error))
+			if !ok {
+				newChannel, err := rabbit.connection.Channel()
+				if err == nil {
+					channel = newChannel
+				}
+			}
+		}
+	}()
+
 	deliveries, err := queue.Consume(eventName)
 
 	if err != nil {
