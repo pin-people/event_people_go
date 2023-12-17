@@ -34,8 +34,14 @@ func (queue *Queue) Subscribe(routingKey string) error {
 
 func (queue *Queue) Consume(routingKey string) (<-chan amqp.Delivery, error) {
 	queueName := queue.queueNameByRoutingKey(routingKey)
-	queue.inspectQueue(queueName)
-	queue.channel.Qos(workerPool, 0, false)
+	err := queue.inspectQueue(queueName)
+	if err != nil {
+		return nil, err
+	}
+	err = queue.channel.Qos(workerPool, 0, false)
+	if err != nil {
+		return nil, err
+	}
 	return queue.channel.Consume(queueName, "", false, false, false, false, nil)
 }
 
@@ -48,7 +54,7 @@ func (queue *Queue) QueueName(routingKey string) string {
 }
 
 func (queue *Queue) createQueue(queueName string) error {
-	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
+	localQueue, err := queue.channel.QueueDeclarePassive(queueName, true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
