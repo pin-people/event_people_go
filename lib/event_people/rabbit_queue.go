@@ -54,7 +54,7 @@ func (queue *Queue) QueueName(routingKey string) string {
 }
 
 func (queue *Queue) createQueue(queueName string) error {
-	localQueue, err := queue.channel.QueueDeclarePassive(queueName, true, false, false, false, nil)
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
