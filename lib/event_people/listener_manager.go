@@ -2,6 +2,7 @@ package EventPeople
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -35,11 +36,9 @@ var workerPool int
 func (manager manager) BindAllListeners() {
 	for index := range ListenerConfigurationsList {
 		listenerItem := ListenerConfigurationsList[index]
-		fmt.Println("Bind Event EventName =>", listenerItem.EventName)
 		err := SubscribeTo(listenerItem.EventName)
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			log.Fatal(err)
 		}
 	}
 }

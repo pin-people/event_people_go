@@ -3,6 +3,7 @@ package EventPeople
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -69,7 +70,7 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	deliveries, err := queue.Consume(eventName)
 
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 	for delivery := range deliveries {
 		var eventMessage Event
