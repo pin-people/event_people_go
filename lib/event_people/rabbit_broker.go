@@ -54,8 +54,14 @@ func (rabbit *RabbitBroker) Subscribe(eventName string) error {
 	if rabbit.amqpChannel == nil {
 		rabbit.Channel()
 	}
-	rabbit.queue = Queue{channel: rabbit.amqpChannel}
-	return rabbit.queue.Subscribe(eventName)
+	channel, err := rabbit.connection.Channel()
+	defer channel.Close()
+	queue := Queue{channel: channel}
+	if err != nil {
+		log.Println(err)
+	}
+	err = queue.Subscribe(eventName)
+	return err
 }
 
 func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
