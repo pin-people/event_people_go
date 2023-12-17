@@ -70,7 +70,7 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	deliveries, err := queue.Consume(eventName)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	for delivery := range deliveries {
 		var eventMessage Event
