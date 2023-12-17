@@ -38,7 +38,7 @@ func (manager manager) BindAllListeners() {
 		listenerItem := ListenerConfigurationsList[index]
 		err := SubscribeTo(listenerItem.EventName)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 		}
 	}
 }
