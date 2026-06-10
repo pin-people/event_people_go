@@ -134,8 +134,8 @@ We follow the RabbitMQ pattern matching model, so given each word of the event n
 Other important aspect of event consumming is the result of the processing we provide 3 methods so you can inform the Broker what to do with the event next:
 
 -   `Success:` should be called when the event was processed successfuly and the can be discarded;
--   `Fail:` should be called when an error ocurred processing the event and the message should be requeued;
--   `Reject:` should be called whenever a message should be discarded without being processed.
+-   `Fail:` should be called on transient errors (database down, timeouts). The message is retried a bounded number of times and then dead-lettered — see [Failure handling, retries and the DLQ](#failure-handling-retries-and-the-dlq);
+-   `Reject:` should be called on deterministic errors (validation, malformed payload). The message goes straight to the Dead Letter Queue without being retried.
 
 Given you want to consume a single event inside your project you can use the `EventPeople.ListenTo` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
 
@@ -355,6 +355,74 @@ func main() {
 ```
 
 [See more details](https://github.com/pin-people/event_people_node/blob/master/examples/daemon.rb)
+
+## Failure handling, retries and the DLQ
+
+Since v0.2.0 every queue is declared with dead-lettering enabled. No message is
+silently dropped or requeued forever.
+
+### Topology
+
+Declared automatically by `SubscribeTo`/`BindAllListeners` for each app
+(`RABBIT_EVENT_PEOPLE_APP_NAME=service` in the examples below):
+
+| Object | Name | Purpose |
+| --- | --- | --- |
+| Dead Letter Exchange (fanout, durable) | `service.dlx` | Receives every `Nack(requeue=false)`/`Reject(false)` |
+| Dead Letter Queue (durable) | `service.dlq` | Parking queue bound to the DLX; messages stay here until inspected/replayed |
+| Retry queue (durable, per main queue) | `<queue>.retry` | Holds retried messages for `RABBIT_EVENT_PEOPLE_RETRY_TTL_MS`, then returns them to the original queue via the default exchange |
+
+Main queues are declared with `x-dead-letter-exchange: service.dlx`.
+
+### Semantics
+
+-   `context.Success()` — Ack. Unchanged.
+-   `context.Fail()` — bounded retry. The current attempt count is read from the
+    `x-event-people-retries` header; while below `RABBIT_EVENT_PEOPLE_MAX_RETRIES`
+    the message is republished to `<queue>.retry` (with the counter incremented)
+    and the original is acked. Once exhausted — or if republishing fails — the
+    message is `Nack(requeue=false)`ed and lands in the DLQ.
+-   `context.Reject()` — `Reject(requeue=false)`: straight to the DLQ. Use it for
+    deterministic errors (validation, unmarshal/encode) that would fail on every
+    retry. Never loops, never lost.
+
+### Configuration
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `RABBIT_EVENT_PEOPLE_MAX_RETRIES` | `3` | Retries before a `Fail()`ed message is dead-lettered |
+| `RABBIT_EVENT_PEOPLE_RETRY_TTL_MS` | `30000` | Delay between retries (TTL of the retry queue) |
+
+### Rolling out to existing environments
+
+RabbitMQ refuses to redeclare an existing durable queue with different
+arguments (`PRECONDITION_FAILED`, channel closes). Queues created by versions
+before v0.2.0 have no `x-dead-letter-exchange`, so for each service:
+
+1. Stop the consumer.
+2. Make sure the queues are empty (drain or wait).
+3. Delete the service's queues (`rabbitmqadmin delete queue name=<queue>`).
+4. Deploy/start the consumer with v0.2.0 — queues are redeclared with the DLQ args.
+
+### Inspecting and replaying the DLQ
+
+Each dead-lettered message carries the standard `x-death` header (original
+queue, reason, count). To inspect without consuming:
+
+```cmd
+rabbitmqadmin get queue=service.dlq ackmode=reject_requeue_true count=10
+```
+
+To replay, republish the message to the default exchange using the original
+queue name (from `x-death`) as the routing key, then ack it in the DLQ.
+
+### Monitoring
+
+Alert on DLQ depth with the RabbitMQ Prometheus plugin:
+
+```promql
+rabbitmq_queue_messages{queue=~".*\\.dlq"} > 0
+```
 
 ## Development
 
