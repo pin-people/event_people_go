@@ -1,5 +1,7 @@
 package EventPeople
 
+import amqp "github.com/rabbitmq/amqp091-go"
+
 type ContextInterface interface {
 	Initialize(DeliveryInterface)
 	Success()
@@ -17,4 +19,7 @@ type DeliveryStruct struct {
 	DeliveryInterface
 	DeliveryTag uint64
 	Body        []byte
+	Headers     amqp.Table
+	QueueName   string
+	Publish     PublishFunc
 }
