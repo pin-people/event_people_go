@@ -54,12 +54,41 @@ func (queue *Queue) QueueName(routingKey string) string {
 }
 
 func (queue *Queue) createQueue(queueName string) error {
-	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, mainQueueArgs())
 	if err != nil {
 		return err
 	}
 	queue.amqpQueue = &localQueue
 	return nil
+}
+
+func mainQueueArgs() amqp.Table {
+	return amqp.Table{"x-dead-letter-exchange": DeadLetterExchangeName()}
+}
+
+func retryQueueArgs(queueName string) amqp.Table {
+	return amqp.Table{
+		"x-message-ttl":             RetryTTLMs(),
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": queueName,
+	}
+}
+
+func (queue *Queue) createDeadLetterTopology() error {
+	err := queue.channel.ExchangeDeclare(DeadLetterExchangeName(), "fanout", true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	_, err = queue.channel.QueueDeclare(DeadLetterQueueName(), true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	return queue.channel.QueueBind(DeadLetterQueueName(), "", DeadLetterExchangeName(), false, nil)
+}
+
+func (queue *Queue) createRetryQueue(queueName string) error {
+	_, err := queue.channel.QueueDeclare(RetryQueueName(queueName), true, false, false, false, retryQueueArgs(queueName))
+	return err
 }
 
 func (queue *Queue) inspectQueue(queueName string) error {
@@ -87,7 +116,15 @@ func (queue *Queue) exchangeBind(queueName string, routingKey string) error {
 
 func (queue *Queue) createQueueAndBind(routingKey string) error {
 	queueName := queue.queueNameByRoutingKey(routingKey)
-	err := queue.createQueue(queueName)
+	err := queue.createDeadLetterTopology()
+	if err != nil {
+		return err
+	}
+	err = queue.createQueue(queueName)
+	if err != nil {
+		return err
+	}
+	err = queue.createRetryQueue(queueName)
 	if err != nil {
 		return err
 	}
