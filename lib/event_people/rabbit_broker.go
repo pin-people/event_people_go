@@ -92,14 +92,30 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if err != nil {
 		log.Println(err)
 	}
+	queueName := queue.queueNameByRoutingKey(eventName)
+	publish := func(routingKey string, headers amqp.Table, body []byte) error {
+		return channel.Publish("", routingKey, false, false, amqp.Publishing{
+			Headers:      headers,
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			Body:         body,
+		})
+	}
 	for delivery := range deliveries {
 		var eventMessage Event
 		json.Unmarshal(delivery.Body, &eventMessage)
 
 		eventMessage.Name = eventMessage.Headers.AppName
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
-		deliveryStruct := DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag}
-		rabbitContext := NewContext(delivery)
+		deliveryStruct := DeliveryStruct{
+			DeliveryInterface: delivery,
+			Body:              delivery.Body,
+			DeliveryTag:       delivery.DeliveryTag,
+			Headers:           delivery.Headers,
+			QueueName:         queueName,
+			Publish:           publish,
+		}
+		rabbitContext := NewContext(delivery, delivery.Headers, queueName, publish)
 		rabbitContext.DeliveryStruct = deliveryStruct
 		callback(eventMessage, rabbitContext)
 	}

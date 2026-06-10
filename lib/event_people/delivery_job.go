@@ -19,6 +19,7 @@ func (j *Job) Do() {
 	eventMessage.Name = eventMessage.Headers.AppName
 	eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
-	rabbitContext := NewContext(j.job.delivery.DeliveryInterface)
+	rabbitContext := NewContext(j.job.delivery.DeliveryInterface, j.job.delivery.Headers, j.job.delivery.QueueName, j.job.delivery.Publish)
+	rabbitContext.DeliveryStruct = *j.job.delivery
 	j.job.callback(eventMessage, rabbitContext)
 }
