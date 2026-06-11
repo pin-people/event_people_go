@@ -1,14 +1,25 @@
 package EventPeople
 
+import (
+	"os"
+	"os/signal"
+	"syscall"
+)
+
 func DaemonStart() error {
-	var forever chan struct{}
 	ListenerManager.BindAllListeners()
 	ListenerManager.ConsumeAllListeners()
 	defer DaemonStop()
-	<-forever
+	bindSignals()
 	return nil
 }
 
 func DaemonStop() {
 	Config.Broker.CloseConnection()
+}
+
+func bindSignals() {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	<-quit
 }
