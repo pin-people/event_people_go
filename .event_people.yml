@@ -42,15 +42,16 @@ deviations:
   - id: DEV-GO-002
     component: BaseListener / Queue
     file: "lib/event_people/base_listener.go, lib/event_people/rabbit_queue.go"
-    severity: medium
+    severity: high
     description: >
-      BindEvent() registers two ListenerManagerStruct entries with different EventName values
-      (resource.origin.action.all and resource.origin.action.{appName}).
-      queueNameByRoutingKey() does not normalize a 4-part routing key ending in {appName}
-      to .all, so Subscribe() declares two separate physical queues instead of one queue
-      with two bindings. Correct behavior: single queue {appName}-resource.origin.action.all
-      with two exchange bindings (routing keys .all and .{appName}).
+      BindEvent() registers two ListenerManagerStruct entries (routing keys .all and .{appName}),
+      but queueNameByRoutingKey() does not normalize the destination segment to {appName}.
+      This causes Subscribe() to declare two separate physical queues:
+        - {appName}-resource.origin.action.all
+        - {appName}-resource.origin.action.{appName}
+      Correct behavior (spec v2.0.0): single queue {appName}-resource.origin.action.{appName}
+      with two exchange bindings (routing keys .{appName} and .all).
     fix: >
-      In queueNameByRoutingKey(), always force the 4th segment to "all" regardless of input,
-      so both routing keys resolve to the same queue name. The exchange binding uses the
-      original routing key, preserving correct message routing.
+      In queueNameByRoutingKey(), always normalize the destination segment (index 3) to
+      os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME"), so both routing keys resolve to the same
+      queue name. The exchange binding still uses the original routing key.
