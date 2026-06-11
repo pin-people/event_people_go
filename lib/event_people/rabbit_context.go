@@ -15,6 +15,7 @@ type RabbitContext struct {
 	MaxRetries     int
 	DLQName        string
 	channel        *amqp.Channel
+	initialDelay   int // resolved once at construction time from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS
 }
 
 // IsLastRetry returns true when the current retry count is at or beyond the last allowed retry.
@@ -37,7 +38,7 @@ func (context *RabbitContext) Fail() {
 	queueName := context.DeliveryStruct.QueueName
 	delayStrategy := context.DeliveryStruct.DelayStrategy
 
-	rm := NewRetryManager(maxRetries, delayStrategy)
+	rm := NewRetryManagerWithDelay(maxRetries, delayStrategy, context.initialDelay)
 
 	if rm.ShouldRetry(retryCount) {
 		retryQueueName := queueName + "_retry"
@@ -83,9 +84,10 @@ func (context RabbitContext) Reject() {
 func NewContext(delivery DeliveryInterface) *RabbitContext {
 	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
 	context := &RabbitContext{
-		delivery: delivery,
-		MaxRetries: Config.MaxAttempts(),
-		DLQName:  appName + "_dlq",
+		delivery:     delivery,
+		MaxRetries:   Config.MaxAttempts(),
+		DLQName:      appName + "_dlq",
+		initialDelay: resolveInitialDelay(),
 	}
 	return context
 }
@@ -94,10 +96,11 @@ func NewContext(delivery DeliveryInterface) *RabbitContext {
 func NewContextWithRetry(delivery DeliveryInterface, channel *amqp.Channel, queueName string, maxRetries int, delayStrategy string, retryCount int) *RabbitContext {
 	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
 	ctx := &RabbitContext{
-		delivery:   delivery,
-		MaxRetries: maxRetries,
-		DLQName:    appName + "_dlq",
-		channel:    channel,
+		delivery:     delivery,
+		MaxRetries:   maxRetries,
+		DLQName:      appName + "_dlq",
+		channel:      channel,
+		initialDelay: resolveInitialDelay(),
 	}
 	ctx.DeliveryStruct.MaxRetries = maxRetries
 	ctx.DeliveryStruct.DelayStrategy = delayStrategy

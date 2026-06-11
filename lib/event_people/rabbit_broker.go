@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -75,13 +76,17 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 	channel, err := rabbit.connection.Channel()
 	queue := Queue{channel: channel}
 
+	var mu sync.Mutex
+
 	go func() {
 		for {
 			_, ok := <-channel.NotifyClose(make(chan *amqp.Error))
 			if !ok {
 				newChannel, err := rabbit.connection.Channel()
 				if err == nil {
+					mu.Lock()
 					channel = newChannel
+					mu.Unlock()
 				}
 			}
 		}
@@ -110,10 +115,22 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 		eventMessage.Name = delivery.RoutingKey
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
-		// Read retry count from AMQP header
+		// Read retry count from AMQP header — handle multiple numeric types
+		// produced by non-Go publishers (Python → int64, JSON → float64).
 		retryCount := 0
 		if v, ok := delivery.Headers["x-event-people-retries"]; ok {
-			retryCount = int(v.(int32))
+			switch val := v.(type) {
+			case int32:
+				retryCount = int(val)
+			case int64:
+				retryCount = int(val)
+			case float64:
+				retryCount = int(val)
+			}
+		}
+		// Clamp to non-negative
+		if retryCount < 0 {
+			retryCount = 0
 		}
 		eventMessage.RetryCount = retryCount
 
@@ -130,9 +147,13 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 			RetryCount:        retryCount,
 		}
 
+		mu.Lock()
+		ch := channel
+		mu.Unlock()
+
 		rabbitContext := NewContextWithRetry(
 			delivery,
-			channel,
+			ch,
 			queueName,
 			rc.MaxAttempts,
 			rc.DelayStrategy,

@@ -22,7 +22,7 @@ type Event struct {
 	Headers       Headers `json:"headers"`
 	Body          any     `json:"body"`
 	SchemaVersion float64 `json:"schemaVersion"`
-	RetryCount    int     `json:"retryCount,omitempty"`
+	RetryCount    int     `json:"-"`
 }
 
 // IncrementRetryCount increases RetryCount by 1.

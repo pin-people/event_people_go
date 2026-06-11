@@ -16,19 +16,31 @@ type RetryManager struct {
 
 // NewRetryManager creates a RetryManager with the given configuration.
 // InitialDelay is read from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS (default 1000).
+// Prefer NewRetryManagerWithDelay when the caller has already resolved the delay
+// (e.g. stored in RabbitContext) to avoid repeated env-var lookups.
 func NewRetryManager(maxAttempts int, delayStrategy string) *RetryManager {
-	initialDelay := 1000
-	if v := os.Getenv("RABBIT_EVENT_PEOPLE_RETRY_TTL_MS"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			initialDelay = parsed
-		}
-	}
+	return NewRetryManagerWithDelay(maxAttempts, delayStrategy, resolveInitialDelay())
+}
+
+// NewRetryManagerWithDelay creates a RetryManager with a pre-resolved initialDelay.
+func NewRetryManagerWithDelay(maxAttempts int, delayStrategy string, initialDelay int) *RetryManager {
 	return &RetryManager{
 		MaxAttempts:   maxAttempts,
 		DelayStrategy: delayStrategy,
 		InitialDelay:  initialDelay,
 		MaxDelay:      600000,
 	}
+}
+
+// resolveInitialDelay reads RABBIT_EVENT_PEOPLE_RETRY_TTL_MS once and returns the value.
+func resolveInitialDelay() int {
+	initialDelay := 1000
+	if v := os.Getenv("RABBIT_EVENT_PEOPLE_RETRY_TTL_MS"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			initialDelay = parsed
+		}
+	}
+	return initialDelay
 }
 
 // ShouldRetry returns true if retryCount is less than MaxAttempts.
