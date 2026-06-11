@@ -45,13 +45,13 @@ deviations:
     severity: high
     description: >
       BindEvent() registers two ListenerManagerStruct entries (routing keys .all and .{appName}),
-      but queueNameByRoutingKey() does not normalize the destination segment to {appName}.
-      This causes Subscribe() to declare two separate physical queues:
-        - {appName}-resource.origin.action.all
-        - {appName}-resource.origin.action.{appName}
-      Correct behavior (spec v2.0.0): single queue {appName}-resource.origin.action.{appName}
-      with two exchange bindings (routing keys .{appName} and .all).
+      but queueNameByRoutingKey() does not normalize the destination segment to 'all' for
+      4-part routing keys. This causes Subscribe() to declare two separate physical queues:
+        - {appName}-resource.origin.action.all   (correct)
+        - {appName}-resource.origin.action.{appName}   (extra, incorrect)
+      Correct behavior: single queue {appName}-resource.origin.action.all with two exchange
+      bindings (routing keys .all and .{appName}).
     fix: >
-      In queueNameByRoutingKey(), always normalize the destination segment (index 3) to
-      os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME"), so both routing keys resolve to the same
-      queue name. The exchange binding still uses the original routing key.
+      In queueNameByRoutingKey(), always normalize the destination segment (index 3) to "all",
+      regardless of input. Both routing keys resolve to the same queue name; the exchange
+      binding still uses the original routing key for correct message routing.
