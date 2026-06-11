@@ -22,6 +22,12 @@ type Event struct {
 	Headers       Headers `json:"headers"`
 	Body          any     `json:"body"`
 	SchemaVersion float64 `json:"schemaVersion"`
+	RetryCount    int     `json:"retryCount,omitempty"`
+}
+
+// IncrementRetryCount increases RetryCount by 1.
+func (event *Event) IncrementRetryCount() {
+	event.RetryCount++
 }
 
 type Payload struct {

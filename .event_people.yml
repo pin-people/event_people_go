@@ -1,5 +1,5 @@
 spec_version: "1.1.0"
-implementation_version: "v0.2.1"
+implementation_version: "v0.3.0"
 language: go
 package: "github.com/pinpeople/event_people_go"
 status: stable
@@ -19,9 +19,6 @@ implemented:
   - RabbitContext
   - Topic
   - Queue
-
-# Spec components not yet implemented (pending in spec too)
-pending:
   - RetryManager
   - "Event.retryCount"
   - "Event.incrementRetryCount"
@@ -35,6 +32,9 @@ pending:
   - "RabbitContext.maxRetries"
   - "RabbitContext.isLastRetry"
   - "RabbitContext.dlqName"
+
+# Spec components not yet implemented (pending in spec too)
+pending: []
 
 # Structural or naming departures from the spec
 # (Go PascalCase convention is an accepted adaptation, not a deviation)

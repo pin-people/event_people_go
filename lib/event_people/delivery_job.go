@@ -3,8 +3,9 @@ package EventPeople
 import "encoding/json"
 
 type ContextDelivery struct {
-	delivery *DeliveryStruct
-	callback Callback
+	delivery    *DeliveryStruct
+	callback    Callback
+	rabbitCtx   *RabbitContext
 }
 
 type Job struct {
@@ -18,7 +19,18 @@ func (j *Job) Do() {
 
 	eventMessage.Name = j.job.delivery.RoutingKey
 	eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
+	eventMessage.RetryCount = j.job.delivery.RetryCount
 
-	rabbitContext := NewContext(j.job.delivery.DeliveryInterface)
-	j.job.callback(eventMessage, rabbitContext)
+	// Prefer the full RabbitContext (which carries the channel for retry publishing)
+	// if it was provided; otherwise fall back to constructing a minimal context.
+	var ctx ContextInterface
+	if j.job.rabbitCtx != nil {
+		ctx = j.job.rabbitCtx
+	} else {
+		rabbitContext := NewContext(j.job.delivery.DeliveryInterface)
+		rabbitContext.DeliveryStruct = *j.job.delivery
+		ctx = rabbitContext
+	}
+
+	j.job.callback(eventMessage, ctx)
 }
