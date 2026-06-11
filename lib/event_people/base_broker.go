@@ -7,7 +7,7 @@ type AbstractBaseBroker interface {
 	GetConnection() amqp.Connection
 	GetConsumers() int
 	Subscribe(eventName string) error
-	Consume(eventName string, callback Callback)
+	Consume(eventName string, callback Callback, retryConfig ...RetryConfig)
 	Produce(events Event) error
 	CloseConnection()
 }

@@ -15,7 +15,13 @@ type DeliveryInterface interface {
 
 type DeliveryStruct struct {
 	DeliveryInterface
-	DeliveryTag uint64
-	Body        []byte
-	RoutingKey  string
+	DeliveryTag   uint64
+	Body          []byte
+	RoutingKey    string
+	Headers       map[string]interface{}
+	ContentType   string
+	MaxRetries    int
+	DelayStrategy string
+	QueueName     string
+	RetryCount    int
 }

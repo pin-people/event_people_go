@@ -64,9 +64,13 @@ func (manager manager) ConsumeAllListeners() {
 			delivery := context.(*RabbitContext)
 			if delivery.DeliveryStruct.DeliveryInterface != nil {
 				go Pool.Submit(&Job{
-					job: ContextDelivery{&delivery.DeliveryStruct, func(event Event, contextEvent ContextInterface) {
-						listenerItem.Method(event, contextEvent)
-					}},
+					job: ContextDelivery{
+						delivery:  &delivery.DeliveryStruct,
+						rabbitCtx: delivery,
+						callback: func(event Event, contextEvent ContextInterface) {
+							listenerItem.Method(event, contextEvent)
+						},
+					},
 				})
 				return
 			}

@@ -64,7 +64,7 @@ func (rabbit *RabbitBroker) Subscribe(eventName string) error {
 	return err
 }
 
-func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
+func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryConfig ...RetryConfig) {
 	if rabbit.connection == nil {
 		rabbit.Init()
 	}
@@ -92,15 +92,54 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 	if err != nil {
 		log.Println(err)
 	}
+
+	// Resolve retry config — use provided override or fall back to global Config defaults.
+	var rc RetryConfig
+	if len(retryConfig) > 0 {
+		rc = retryConfig[0]
+	} else {
+		rc = Config.GetRetryConfig()
+	}
+
+	queueName := queue.queueNameByRoutingKey(eventName)
+
 	for delivery := range deliveries {
 		var eventMessage Event
 		json.Unmarshal(delivery.Body, &eventMessage)
 
 		eventMessage.Name = delivery.RoutingKey
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
-		deliveryStruct := DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag, RoutingKey: delivery.RoutingKey}
-		rabbitContext := NewContext(delivery)
+
+		// Read retry count from AMQP header
+		retryCount := 0
+		if v, ok := delivery.Headers["x-event-people-retries"]; ok {
+			retryCount = int(v.(int32))
+		}
+		eventMessage.RetryCount = retryCount
+
+		deliveryStruct := DeliveryStruct{
+			DeliveryInterface: delivery,
+			Body:              delivery.Body,
+			DeliveryTag:       delivery.DeliveryTag,
+			RoutingKey:        delivery.RoutingKey,
+			Headers:           headersToMap(delivery.Headers),
+			ContentType:       delivery.ContentType,
+			MaxRetries:        rc.MaxAttempts,
+			DelayStrategy:     rc.DelayStrategy,
+			QueueName:         queueName,
+			RetryCount:        retryCount,
+		}
+
+		rabbitContext := NewContextWithRetry(
+			delivery,
+			channel,
+			queueName,
+			rc.MaxAttempts,
+			rc.DelayStrategy,
+			retryCount,
+		)
 		rabbitContext.DeliveryStruct = deliveryStruct
+
 		callback(eventMessage, rabbitContext)
 	}
 }
@@ -122,4 +161,13 @@ func (rabbit *RabbitBroker) RabbitURL() string {
 
 func (rabbit *RabbitBroker) CloseConnection() {
 	rabbit.connection.Close()
+}
+
+// headersToMap converts an amqp.Table to map[string]interface{}.
+func headersToMap(table amqp.Table) map[string]interface{} {
+	m := make(map[string]interface{}, len(table))
+	for k, v := range table {
+		m[k] = v
+	}
+	return m
 }

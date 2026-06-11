@@ -54,7 +54,13 @@ func (queue *Queue) QueueName(routingKey string) string {
 }
 
 func (queue *Queue) createQueue(queueName string) error {
-	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
+	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
+	dlxName := appName + "_dlx"
+
+	args := amqp.Table{
+		"x-dead-letter-exchange": dlxName,
+	}
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, args)
 	if err != nil {
 		return err
 	}
@@ -85,12 +91,69 @@ func (queue *Queue) exchangeBind(queueName string, routingKey string) error {
 	return nil
 }
 
-func (queue *Queue) createQueueAndBind(routingKey string) error {
-	queueName := queue.queueNameByRoutingKey(routingKey)
-	err := queue.createQueue(queueName)
+// declareDLXTopology declares the DLX exchange and DLQ (idempotent).
+func (queue *Queue) declareDLXTopology() error {
+	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
+	dlxName := appName + "_dlx"
+	dlqName := appName + "_dlq"
+
+	// Declare DLX as a fanout exchange
+	err := queue.channel.ExchangeDeclare(dlxName, "fanout", true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
+
+	// Declare DLQ
+	_, err = queue.channel.QueueDeclare(dlqName, true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	// Bind DLQ to DLX with empty routing key
+	err = queue.channel.QueueBind(dlqName, "", dlxName, false, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// declareRetryQueue declares the retry queue for a given main queue name (idempotent).
+// The retry queue uses a per-message TTL (set via Expiration in Publishing) and a
+// dead-letter-routing-key back to the original queue so messages re-enter after delay.
+func (queue *Queue) declareRetryQueue(queueName string) error {
+	retryQueueName := queueName + "_retry"
+	args := amqp.Table{
+		"x-dead-letter-exchange":    "",         // default exchange
+		"x-dead-letter-routing-key": queueName, // route back to original queue
+		// NOTE: x-message-ttl is intentionally NOT set here;
+		// per-message TTL is controlled via the Expiration field of each Publishing.
+	}
+	_, err := queue.channel.QueueDeclare(retryQueueName, true, false, false, false, args)
+	return err
+}
+
+func (queue *Queue) createQueueAndBind(routingKey string) error {
+	queueName := queue.queueNameByRoutingKey(routingKey)
+
+	// Declare DLX topology first (idempotent)
+	err := queue.declareDLXTopology()
+	if err != nil {
+		return err
+	}
+
+	// Declare retry queue (idempotent)
+	err = queue.declareRetryQueue(queueName)
+	if err != nil {
+		return err
+	}
+
+	// Declare main queue with dead-letter-exchange
+	err = queue.createQueue(queueName)
+	if err != nil {
+		return err
+	}
+
 	err = queue.exchangeBind(queueName, routingKey)
 	return err
 }
