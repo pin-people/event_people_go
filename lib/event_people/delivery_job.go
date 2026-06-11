@@ -16,7 +16,7 @@ func (j *Job) Do() {
 	var eventMessage Event
 	json.Unmarshal(j.job.delivery.Body, &eventMessage)
 
-	eventMessage.Name = eventMessage.Headers.AppName
+	eventMessage.Name = j.job.delivery.RoutingKey
 	eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
 
 	rabbitContext := NewContext(j.job.delivery.DeliveryInterface)

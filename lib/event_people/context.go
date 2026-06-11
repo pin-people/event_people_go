@@ -17,4 +17,5 @@ type DeliveryStruct struct {
 	DeliveryInterface
 	DeliveryTag uint64
 	Body        []byte
+	RoutingKey  string
 }
