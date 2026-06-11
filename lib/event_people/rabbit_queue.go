@@ -97,5 +97,8 @@ func (queue *Queue) createQueueAndBind(routingKey string) error {
 
 func (queue *Queue) queueNameByRoutingKey(routingKey string) string {
 	eventNameSplited := strings.Split(routingKey, ".")
+	if len(eventNameSplited) <= 3 {
+		eventNameSplited = append(eventNameSplited, "all")
+	}
 	return os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")
 }
