@@ -96,9 +96,9 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback) {
 		var eventMessage Event
 		json.Unmarshal(delivery.Body, &eventMessage)
 
-		eventMessage.Name = eventMessage.Headers.AppName
+		eventMessage.Name = delivery.RoutingKey
 		eventMessage.SchemaVersion = eventMessage.Headers.SchemaVersion
-		deliveryStruct := DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag}
+		deliveryStruct := DeliveryStruct{DeliveryInterface: delivery, Body: delivery.Body, DeliveryTag: delivery.DeliveryTag, RoutingKey: delivery.RoutingKey}
 		rabbitContext := NewContext(delivery)
 		rabbitContext.DeliveryStruct = deliveryStruct
 		callback(eventMessage, rabbitContext)
