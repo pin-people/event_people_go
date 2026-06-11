@@ -11,6 +11,7 @@ implemented:
   - Listener
   - Emitter
   - Daemon
+  - "Daemon.bindSignals"
   - BaseListener
   - ListenersManager
   - BaseBroker
@@ -34,17 +35,7 @@ pending:
   - "RabbitContext.maxRetries"
   - "RabbitContext.isLastRetry"
   - "RabbitContext.dlqName"
-  - "Daemon.bindSignals"
 
 # Structural or naming departures from the spec
 # (Go PascalCase convention is an accepted adaptation, not a deviation)
-deviations:
-  - id: DEV-GO-001
-    component: Daemon
-    file: "lib/event_people/daemon.go"
-    description: >
-      bindSignals() is not implemented. DaemonStart() blocks on a nil channel
-      (<-forever) without trapping SIGTERM or SIGINT. There is no graceful shutdown.
-    spec_defines: "bindSignals() — trap SIGTERM/SIGINT and call stop()"
-    implemented_as: "Blocking channel receive with no signal handling"
-    breaking: false
+deviations: []
