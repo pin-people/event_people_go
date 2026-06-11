@@ -89,13 +89,9 @@ func (event *Event) generateHeaders() {
 }
 
 func (event *Event) fixName() {
-	headerSpec := strings.Split(event.Name, ".")
-
-	if len(headerSpec) == 3 {
-		headerSpec = append(headerSpec, "all")
-		name := strings.Join(headerSpec, ".")
-		event.Name = name
-	}
+	// Routing key must be resource.origin.action.destination — no appName prefix.
+	// The appName prefix belongs only in the queue name (handled in queueNameByRoutingKey).
+	event.Name = event.GetEventName()
 }
 
 func (event *Event) GetEventName() string {
