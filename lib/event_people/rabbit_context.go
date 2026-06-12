@@ -63,7 +63,7 @@ func (context *RabbitContext) Fail() {
 				return
 			}
 		} else {
-			log.Println("No channel available for retry publish; falling back to nack+requeue")
+			log.Println("No channel available for retry publish; falling back to nack without requeue (→ DLQ)")
 			context.delivery.Nack(false, false)
 			return
 		}
