@@ -15,6 +15,7 @@ type RabbitContext struct {
 	MaxRetries     int
 	DLQName        string
 	channel        *amqp.Channel
+	publishFn      func(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
 	initialDelay   int // resolved once at construction time from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS
 }
 
@@ -44,8 +45,8 @@ func (context *RabbitContext) Fail() {
 		retryQueueName := queueName + "_retry"
 		delay := rm.GetNextDelay(retryCount)
 
-		if context.channel != nil {
-			err := context.channel.Publish(
+		if context.publishFn != nil {
+			err := context.publishFn(
 				"",              // default exchange
 				retryQueueName, // routing key = retry queue name
 				false,
@@ -100,6 +101,7 @@ func NewContextWithRetry(delivery DeliveryInterface, channel *amqp.Channel, queu
 		MaxRetries:   maxRetries,
 		DLQName:      appName + "_dlq",
 		channel:      channel,
+		publishFn:    channel.Publish,
 		initialDelay: resolveInitialDelay(),
 	}
 	ctx.DeliveryStruct.MaxRetries = maxRetries
