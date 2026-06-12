@@ -59,12 +59,12 @@ func (context *RabbitContext) Fail() {
 			)
 			if err != nil {
 				log.Printf("Failed to publish to retry queue: %v", err)
-				context.delivery.Nack(false, true)
+				context.delivery.Nack(false, false)
 				return
 			}
 		} else {
 			log.Println("No channel available for retry publish; falling back to nack+requeue")
-			context.delivery.Nack(false, true)
+			context.delivery.Nack(false, false)
 			return
 		}
 		context.delivery.Ack(false)
