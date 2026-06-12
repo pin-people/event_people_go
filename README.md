@@ -356,6 +356,63 @@ func main() {
 
 [See more details](https://github.com/pin-people/event_people_node/blob/master/examples/daemon.rb)
 
+## Retry and Dead Letter Queue (DLQ)
+
+### Environment variables
+
+-   `RABBIT_EVENT_PEOPLE_MAX_RETRIES` — max retry attempts before dead-lettering (default: `3`)
+-   `RABBIT_EVENT_PEOPLE_RETRY_TTL_MS` — base delay in ms for retry backoff (default: `1000`)
+
+### How it works
+
+On `context.Fail()`:
+
+-   If retries remain → message published to `{queue}_retry` with exponential backoff delay, then acked
+-   If retries exhausted → nacked to DLQ via RabbitMQ DLX
+
+On `context.Reject()` → nacked directly to DLQ (no retries)
+
+**Delay strategies:**
+
+-   `exponential` (default): `min(initialDelay × 5^retryCount, 600000)` ms
+-   `fixed`: constant `initialDelay` ms
+
+### Queue topology (auto-created on subscribe)
+
+| Queue/Exchange | Name | Purpose |
+|---|---|---|
+| Exchange (DLX) | `{appName}_dlx` | Fanout, receives dead-lettered messages |
+| DLQ | `{appName}_dlq` | Final resting place for failed messages |
+| Retry queue | `{queue_name}_retry` | Holds messages until backoff delay expires |
+
+### Usage
+
+```go
+import "github.com/pinpeople/event_people_go/lib/event_people"
+
+func HandleOrder(event event_people.Event, context event_people.ContextInterface) {
+    fmt.Printf("Attempt %d of %d\n", event.RetryCount+1, context.MaxRetries)
+
+    if isInvalid(event) {
+        context.Reject() // → DLQ immediately, no retries
+        return
+    }
+
+    if err := process(event); err != nil {
+        if context.IsLastRetry() {
+            fmt.Println("Final attempt failed, sending to DLQ")
+        }
+        context.Fail() // → retry queue (or DLQ if exhausted)
+        return
+    }
+    context.Success()
+}
+
+// Per-listener retry config
+event_people.Listener.On("order.service.created", HandleOrder,
+    event_people.RetryConfig{MaxAttempts: 5, DelayStrategy: "exponential"})
+```
+
 ## Development
 
 To install this module onto your local machine, run `go get`.
