@@ -1,21 +1,60 @@
 package EventPeople
 
-import (
-	"os"
-	"strconv"
-)
+import "os"
 
+// RetryConfig holds the global retry configuration defaults.
 type RetryConfig struct {
 	MaxAttempts   int
+	InitialDelay  int
 	DelayStrategy string
 	DLQName       string
 }
 
 type configStruct struct {
-	Broker AbstractBaseBroker
+	Broker        AbstractBaseBroker
+	MaxAttempts   int
+	InitialDelay  int
+	DelayStrategy string
+	DLQName       string
 }
 
-var Config = new(configStruct)
+var Config = &configStruct{
+	MaxAttempts:   3,
+	InitialDelay:  1000,
+	DelayStrategy: "exponential",
+}
+
+// Configure sets global retry defaults in code. Connection attributes
+// (appName, url, vhost, topic) are always read from environment variables.
+// Options: MaxAttempts, InitialDelay, DelayStrategy, DLQName.
+func (config *configStruct) Configure(options RetryConfig) {
+	if options.MaxAttempts != 0 {
+		config.MaxAttempts = options.MaxAttempts
+	}
+	if options.InitialDelay != 0 {
+		config.InitialDelay = options.InitialDelay
+	}
+	if options.DelayStrategy != "" {
+		config.DelayStrategy = options.DelayStrategy
+	}
+	if options.DLQName != "" {
+		config.DLQName = options.DLQName
+	}
+}
+
+// GetRetryConfig returns the active global retry configuration.
+func (config *configStruct) GetRetryConfig() RetryConfig {
+	dlqName := config.DLQName
+	if dlqName == "" {
+		dlqName = os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "_dlq"
+	}
+	return RetryConfig{
+		MaxAttempts:   config.MaxAttempts,
+		InitialDelay:  config.InitialDelay,
+		DelayStrategy: config.DelayStrategy,
+		DLQName:       dlqName,
+	}
+}
 
 func (config *configStruct) Init() {
 	Config.Broker = new(RabbitBroker)
@@ -24,35 +63,4 @@ func (config *configStruct) Init() {
 
 func (config *configStruct) CloseConnection() {
 	Config.Broker.CloseConnection()
-}
-
-// MaxAttempts returns the maximum number of retry attempts from
-// RABBIT_EVENT_PEOPLE_MAX_RETRIES (default 3).
-func (config *configStruct) MaxAttempts() int {
-	if v := os.Getenv("RABBIT_EVENT_PEOPLE_MAX_RETRIES"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			return parsed
-		}
-	}
-	return 3
-}
-
-// DelayStrategy returns the delay strategy (default "exponential").
-func (config *configStruct) DelayStrategy() string {
-	return "exponential"
-}
-
-// DLQName returns the dead-letter queue name (default "{APP_NAME}_dlq").
-func (config *configStruct) DLQName() string {
-	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
-	return appName + "_dlq"
-}
-
-// GetRetryConfig returns the full retry configuration using the current defaults.
-func (config *configStruct) GetRetryConfig() RetryConfig {
-	return RetryConfig{
-		MaxAttempts:   config.MaxAttempts(),
-		DelayStrategy: config.DelayStrategy(),
-		DLQName:       config.DLQName(),
-	}
 }

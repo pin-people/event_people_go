@@ -1,17 +1,19 @@
-# EventPeople
+# EventPeople — Go
 
-[![CircleCI](https://dl.circleci.com/status-badge/img/gh/pin-people/event_people_node/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/pin-people/event_people_node/tree/main)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/pin-people/event_people_go/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/pin-people/event_people_go/tree/main)
 
-EventPeople is a tool to simplify the communication of event based services. It is an based on the [EventBus](https://github.com/EmpregoLigado/event_bus_rb) gem.
+EventPeople is a tool to simplify the communication of event-based services. It is based on the [EventBus](https://github.com/EmpregoLigado/event_bus_rb) gem.
 
-The main idea is to provide a tool that can emit or consume events based on its names, the event name has 4 words (`resource.origin.action.destination`) which defines some important info about what kind of event it is, where it comes from and who is eligible to consume it:
+The main idea is to provide a tool that can emit or consume events based on their names. The event name has 4 words (`resource.origin.action.destination`) which defines important information about what kind of event it is, where it comes from, and who is eligible to consume it:
 
--   **resource:** Defines which resource this event is related like a `user`, a `product`, `company` or anything that you want;
--   **origin:** Defines the name of the system which emitted the event;
--   **action:** What action is made on the resource like `create`, `delete`, `update`, etc. PS: _It is recommended to use the Semple Present tense for actions_;
--   **destination (Optional):** This word is optional and if not provided EventPeople will add a `.all` to the end of the event name. It defines which service should consume the event being emitted, so if it is defined and there is a service whith the given name only this service will receive it. It is very helpful when you need to re-emit some events. Also if it is `.all` all services will receive it.
+- **resource:** Defines which resource this event is related to — a `user`, a `product`, `company`, or anything you want;
+- **origin:** Defines the name of the system which emitted the event;
+- **action:** What action was performed on the resource — `created`, `deleted`, `updated`, etc.;
+- **destination (Optional):** If not provided, EventPeople appends `.all`. It defines which service should consume the event. If set to a specific app name, only that service receives it (useful for replaying events).
 
-As of today EventPeople uses RabbitMQ as its datasource, but there are plans to add support for other Brokers in the future.
+As of today EventPeople uses RabbitMQ as its broker. Support for other brokers may be added in the future.
+
+Spec version: **1.2.0**
 
 ## Installation
 
@@ -21,340 +23,223 @@ Add this line to your application's `go.mod`:
 require github.com/pin-people/event_people_go
 ```
 
-To install and add it as a dependency in your project:
+To install and add it as a dependency:
 
 ```cmd
-   $ go get "github.com/pin-people/event_people_go"
+go get "github.com/pin-people/event_people_go"
 ```
 
-You need to install in mode proxy, to this use:
-
-### Linux/MacOS
+### Linux/MacOS (proxy mode)
 
 ```cmd
-    $ GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/pin-people/event_people_go
+GOPROXY=https://proxy.golang.org GO111MODULE=on go get github.com/pin-people/event_people_go
 ```
 
-### Windows
+### Windows (proxy mode)
 
 ```cmd
-    $ set GOPROXY=https://proxy.golang.org; set GO111MODULE=on; go get github.com/pin-people/event_people_go
+set GOPROXY=https://proxy.golang.org; set GO111MODULE=on; go get github.com/pin-people/event_people_go
 ```
 
-Set env vars and execute init function:
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `RABBIT_EVENT_PEOPLE_APP_NAME` | yes | Application name — used as queue name prefix |
+| `RABBIT_EVENT_PEOPLE_TOPIC_NAME` | yes | RabbitMQ topic exchange name |
+| `RABBIT_EVENT_PEOPLE_VHOST` | yes | RabbitMQ virtual host |
+| `RABBIT_URL` | yes | RabbitMQ connection URL (e.g. `amqp://user:pass@host`) |
+
+Retry behaviour is configured via `Config.Configure()` or per-listener `RetryConfig` — not via env vars.
+
+## Setup
 
 ```golang
 func init() {
-	os.Setenv("WORKERS", "4")
-	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
-	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
-	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
-	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
+    os.Setenv("WORKERS", "4")
+    os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
+    os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
+    os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
+    os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
 
-	EventPeople.Config.Init()
+    EventPeople.Config.Init()
 }
 ```
 
 ## Usage
 
-### Events
+### Retry Configuration
 
-The main component of `EventPeople` is the `EventPeople.Event` class which wraps all the logic of an event and whenever you receive or want to send an event you will use it.
+Retry behaviour can be configured globally or per-listener. When not configured, hardcoded defaults apply.
 
-It has 2 attributes `name` and `payload`:
-
--   **name:** The name must follow our conventions, being it 3 (`resource.origin.action`) or 4 words (`resource.origin.action.destination`);
--   **payload:** It is the body of the massage, it should be a Custom Struct mapping the JSON fields of the message.
+**Global configuration (optional):**
 
 ```golang
-import (
-  EventPeople "github.com/pin-people/event_people_go"
-)
+EventPeople.Config.Configure(EventPeople.RetryConfig{
+    MaxAttempts:   5,
+    InitialDelay:  2000,      // milliseconds
+    DelayStrategy: "exponential", // "exponential" (default) or "fixed"
+    DLQName:       "myapp_dlq",   // defaults to "{appName}_dlq"
+})
+```
 
-type BodyStructure struct {
-	Amount int    `json:"amount"`
-	Name   string `json:"name"`
+**Inspect the active configuration:**
+
+```golang
+rc := EventPeople.Config.GetRetryConfig()
+// rc.MaxAttempts, rc.InitialDelay, rc.DelayStrategy, rc.DLQName
+```
+
+**Defaults:**
+
+| Setting | Default |
+|---------|---------|
+| `MaxAttempts` | `3` |
+| `InitialDelay` | `1000` ms |
+| `DelayStrategy` | `"exponential"` |
+| `DLQName` | `"{appName}_dlq"` |
+
+**Delay strategies:**
+
+- `exponential`: `min(initialDelay * 5^attempt, 600000 ms)`
+  - attempt 0: 1 s, attempt 1: 5 s, attempt 2: 25 s, ...
+- `fixed`: constant `initialDelay` on every retry
+
+### RabbitMQ Topology
+
+Declared automatically on subscribe:
+
+| Resource | Name | Notes |
+|----------|------|-------|
+| Main queue | `{appName}-{resource}.{origin}.{action}.all` | `x-dead-letter-exchange` → DLX |
+| Retry queue | `{queueName}_retry` | No queue TTL — per-message `expiration` |
+| DLX exchange | `{appName}_dlx` | fanout, durable |
+| DLQ | `{appName}_dlq` | bound to DLX |
+
+### Events
+
+The main component is `EventPeople.Event`. It wraps all event logic.
+
+```golang
+import EventPeople "github.com/pin-people/event_people_go/lib/event_people"
+
+type Body struct {
+    Amount int    `json:"amount"`
+    Name   string `json:"name"`
 }
 
 func main() {
-  var eventName = "user.users.create";
-  var body = BodyStructure{ id: 42, name: "John Doe", age: 35 };
-  var event = EventPeople.NewEvent(event_name, body);
+    event := EventPeople.NewEvent("user.users.created", Body{Amount: 42, Name: "John Doe"})
+    // event.RetryCount == 0 (auto-initialized)
 }
-
 ```
-
-There are 3 main interfaces to use `EventPeople` on your project:
-
--   Calling `EventPeople.TriggerEmitter(event []*EventPeople.Event)` inside your project;
--   Calling `EventPeople.ListenTo(eventName string)` inside your project;
--   Or extending `EventPeople.BaseListener` and use it as a daemon.
 
 ### Using the Emitter
 
-You can emit events on your project passing an `EventPeople.Event` instance to the `EventPeople.TriggerEmitter` method. Doing this other services that are subscribed to these events will receive it.
-
 ```golang
 import (
-  "encoding/json"
-  EventPeople "github.com/pin-people/event_people_go"
-)
-
-type BodyStructureEmmiter struct {
-	Amount int    `json:"amount"`
-	Name   string `json:"name"`
-}
-
-func main() {
-  var eventName = "receipt.payments.pay.users"
-  var body := BodyStructureEmmiter{Amount: 350.76, Name: "John"}
-
-
-  event := EventPeople.NewEvent(eventName, body)
-
-  EventPeople.TriggerEmitter([]*EventPeople.Event{event})
-
-  // Don't forget to close the connection!!!
-  EventPeople.Config.CloseConnection()
-}
-
-```
-
-[See more details](https://github.com/pin-people/event_people_node/blob/master/examples/emitter.rb)
-
-### Listeners
-
-You can subscribe to events based on patterns for the event names you want to consume or you can use the full name of the event to consume single events.
-
-We follow the RabbitMQ pattern matching model, so given each word of the event name is separated by a dot (`.`), you can use the following symbols:
-
--   `* (star):` to match exactly one word. Example `resource.*.*.all`;
--   `# (hash):` to match zero or more words. Example `resource.#.all`.
-
-Other important aspect of event consumming is the result of the processing we provide 3 methods so you can inform the Broker what to do with the event next:
-
--   `Success:` should be called when the event was processed successfuly and the can be discarded;
--   `Fail:` should be called when an error ocurred processing the event and the message should be requeued;
--   `Reject:` should be called whenever a message should be discarded without being processed.
-
-Given you want to consume a single event inside your project you can use the `EventPeople.ListenTo` method. It consumes a single event, given there are events available to be consumed with the given name pattern.
-
-```golang
-import (
-  "fmt"
-  EventPeople "github.com/pin-people/event_people_go"
+    EventPeople "github.com/pin-people/event_people_go/lib/event_people"
 )
 
 func main() {
-  // 3 words event names will be replaced by its 4 word wildcard
-  // counterpart: 'payment.payments.pay.all'
-  var eventName = "payment.payments.pay"
-  var once = make(chan int)
-
-  EventPeople.ListenTo(eventName, func (event EventPeople.Event, context EventPeople.BaseListener) {
-    msg := event.Body
-
-		fmt.Println("")
-		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))
-		fmt.Println(fmt.Sprintf("     Message: %s", msg))
-		fmt.Println("")
-		context.Success()
-    once <- 1
-  });
-  <-once
-  EventPeople.Config.CloseConnection()
+    event := EventPeople.NewEvent("receipt.payments.pay.users", Body{Amount: 350, Name: "John"})
+    EventPeople.TriggerEmitter([]*EventPeople.Event{event})
+    EventPeople.Config.CloseConnection()
 }
 ```
 
-You can also receive all available messages using a channel and time sleep:
+### Listening to Events
+
+Three methods for processing results are available on the context:
+
+- `Success()` — event processed successfully, ack and discard;
+- `Fail()` — processing failed, publish to retry queue (with backoff) or nack to DLQ when retries exhausted;
+- `Reject()` — discard without retrying, nack to DLQ.
+
+The context also exposes:
+
+- `ctx.GetMaxRetries()` — total retry attempts configured;
+- `ctx.GetIsLastRetry()` — `true` on the final retry attempt.
+
+**Single event listener:**
 
 ```golang
-import (
-  "fmt"
-  EventPeople "github.com/pin-people/event_people_go"
-)
-var once = make(chan int)
-
 func main() {
-  var eventName = "payment.payments.pay.all"
+    var eventName = "payment.payments.pay"
+    var once = make(chan int)
 
-	EventPeople.ListenTo(eventName, func(event EventPeople.Event, context EventPeople.BaseListener) {
-		msg := event.Body
+    EventPeople.ListenTo(eventName, func(event EventPeople.Event, ctx EventPeople.ContextInterface) {
+        fmt.Printf("Received %s: %s\n", event.Name, event.Body)
 
-		fmt.Println("")
-		fmt.Println(fmt.Sprintf("  - Received the %s message from %s:", event.Name, event.Headers.Origin))
-		fmt.Println(fmt.Sprintf("     Message: %s", msg))
-		fmt.Println("")
-		context.Success()
-	})
+        if ctx.GetIsLastRetry() {
+            fmt.Println("This is the last retry attempt")
+        }
+        ctx.Success()
+        once <- 1
+    })
 
-	go func() {
-    time.Sleep(15 * time.Second)
-		once <- 1
-	}()
-
-	<-once
-  EventPeople.Config.CloseConnection()
+    <-once
+    EventPeople.Config.CloseConnection()
 }
 ```
 
-[See more details](https://github.com/pin-people/event_people_node/blob/master/examples/listener.rb)
-
-#### Multiple events routing
-
-If your project needs to handle lots of events you can extend `EventPeople.BaseListener` class to bind how many events you need to instance methods, so whenever an event is received the method will be called automatically.
+**Daemon with multiple event bindings:**
 
 ```golang
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-
-	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
-)
-
-func init() {
-	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
-	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
-	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
-	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
-	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
-
-	EventPeople.Config.Init()
+func pay(event EventPeople.Event, ctx EventPeople.ContextInterface) {
+    fmt.Printf("Processing payment: %s\n", event.Name)
+    ctx.Success()
 }
 
-type BodyStructureDaemon struct {
-	Amount int    `json:"amount"`
-	Name   string `json:"name"`
-}
-
-type PrivateMessageDaemon struct {
-	Message string `json:"message"`
-}
-
-type SecondPrivateMessageDaemon struct {
-	Bo string `json:"bo"`
-	Dy string `json:"dy"`
-}
-
-func pay(event EventPeople.Event, cel EventPeople.ContextInterface) {
-	var bodyDaemon = new(BodyStructureDaemon)
-	event.SetStructBody(&bodyDaemon)
-
-	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
-	cel.Success()
-}
-
-func receive(event EventPeople.Event, cel EventPeople.ContextInterface) {
-	var bodyDaemon = new(BodyStructureDaemon)
-  event.SetStructBody(&bodyDaemon)
-
-	if bodyDaemon.Amount < 500 {
-		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
-		cel.Reject()
-		return
-	}
-	fmt.Println("Received %d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name)
-	cel.Success()
-}
-
-func privateChannel(event EventPeople.Event, cel EventPeople.ContextInterface) {
-	var bodyDaemon = new(PrivateMessageDaemon)
-  event.SetStructBody(&bodyDaemon)
-
-	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
-	cel.Success()
+func receive(event EventPeople.Event, ctx EventPeople.ContextInterface) {
+    fmt.Printf("Received: %s\n", event.Name)
+    ctx.Success()
 }
 
 func main() {
-	EventPeople.BindEvent(pay, "resource.custom.pay")
-	EventPeople.BindEvent(receive, "resource.custom.receive")
-	EventPeople.BindEvent(privateChannel, "resource.custom.private.service")
-	EventPeople.BindEvent(secondPrivateChannel, "resource.origin.action.service")
+    EventPeople.BindEvent(pay, "resource.custom.pay")
+    EventPeople.BindEvent(receive, "resource.custom.receive")
 
-	EventPeople.DaemonStart()
+    EventPeople.DaemonStart()
 }
 ```
 
-[See more details](https://github.com/pin-people/event_people_node/blob/master/examples/daemon.rb)
+**Per-listener retry configuration:**
 
-#### Creating a Daemon
-
-If you have the need to create a deamon to consume messages on background you can use the `EventPeople.DaemonStart` method to do so with ease. Just remember to define or import all the event bindings before starting the daemon.
+Embed `BaseListener` in your listener struct and set `RetryConfig` before registering:
 
 ```golang
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-
-	EventPeople "github.com/pin-people/event_people_go/lib/event_people"
-)
-
-func init() {
-	os.Setenv("RABBIT_EVENT_PEOPLE_APP_NAME", "service")
-	os.Setenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME", "event_people")
-	os.Setenv("RABBIT_EVENT_PEOPLE_VHOST", "event_people")
-	os.Setenv("RABBIT_URL", "amqp://admin:admin@localhost:5672")
-	os.Setenv("RABBIT_FULL_URL", fmt.Sprintf("%s/%s", os.Getenv("RABBIT_URL"), os.Getenv("RABBIT_EVENT_PEOPLE_VHOST")))
-
-	EventPeople.Config.Init()
-}
-
-type BodyStructureDaemon struct {
-	Amount int    `json:"amount"`
-	Name   string `json:"name"`
-}
-
-type PrivateMessageDaemon struct {
-	Message string `json:"message"`
-}
-
-type SecondPrivateMessageDaemon struct {
-	Bo string `json:"bo"`
-	Dy string `json:"dy"`
-}
-
-func pay(event EventPeople.Event, cel EventPeople.BaseListener) {
-	var bodyDaemon = new(BodyStructureDaemon)
-	event.SetStructBody(&bodyDaemon)
-
-	fmt.Println(fmt.Sprintf("Paid %v for %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
-	cel.Success()
-}
-
-func receive(event EventPeople.Event, cel EventPeople.BaseListener) {
-	var bodyDaemon = new(BodyStructureDaemon)
-	event.SetStructBody(&bodyDaemon)
-
-	if bodyDaemon.Amount < 500 {
-		fmt.Println(fmt.Sprintf("[consumer] Got SKIPPED message:\n%d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name))
-		cel.Reject()
-		return
-	}
-	fmt.Println("Received %d from %s ~> %s", bodyDaemon.Amount, bodyDaemon.Name, event.Name)
-	cel.Success()
-}
-
-func privateChannel(event EventPeople.Event, cel EventPeople.BaseListener) {
-	var bodyDaemon = new(PrivateMessageDaemon)
-	event.SetStructBody(&bodyDaemon)
-
-	fmt.Println(fmt.Sprintf("[Consumer] Got a private message: %s ~> %s", bodyDaemon.Message, event.Name))
-	cel.Success()
+type PaymentListener struct {
+    EventPeople.BaseListener
 }
 
 func main() {
-  	EventPeople.BindEvent(pay, "resource.custom.pay")
-	EventPeople.BindEvent(receive, "resource.custom.receive")
-	EventPeople.BindEvent(privateChannel, "resource.custom.private.service")
-	EventPeople.BindEvent(secondPrivateChannel, "resource.origin.action.service")
+    payListener := &PaymentListener{}
+    payListener.RetryConfig = EventPeople.ListenerRetryConfig{
+        MaxAttempts:   10,
+        InitialDelay:  500,
+        DelayStrategy: "fixed",
+        DLQName:       "payments_dlq",
+    }
 
-	EventPeople.DaemonStart()
+    EventPeople.BindEvent(payListener.HandlePayment, "receipt.payments.pay")
+    EventPeople.DaemonStart()
 }
 ```
 
-[See more details](https://github.com/pin-people/event_people_node/blob/master/examples/daemon.rb)
+Per-listener settings override global `Config` defaults for that listener only. Zero values fall back to the global default.
+
+### RetryCount on Incoming Events
+
+When an event is redelivered from the retry queue, `event.RetryCount` is populated from the `x-event-people-retries` AMQP header:
+
+```golang
+EventPeople.ListenTo("payment.payments.pay", func(event EventPeople.Event, ctx EventPeople.ContextInterface) {
+    fmt.Printf("Attempt %d of %d\n", event.RetryCount+1, ctx.GetMaxRetries())
+    // process...
+    ctx.Success()
+})
+```
 
 ## Retry and Dead Letter Queue (DLQ)
 
@@ -415,15 +300,17 @@ event_people.Listener.On("order.service.created", HandleOrder,
 
 ## Development
 
-To install this module onto your local machine, run `go get`.
+```cmd
+go test ./...
+```
 
 ## Contributing
 
--   Fork it
--   Create your feature branch (`git checkout -b my-new-feature`)
--   Commit your changes (`git commit -am 'Add some feature'`)
--   Push to the branch (`git push origin my-new-feature`)
--   Create a new Pull Request
+- Fork it
+- Create your feature branch (`git checkout -b my-new-feature`)
+- Commit your changes (`git commit -am 'Add some feature'`)
+- Push to the branch (`git push origin my-new-feature`)
+- Create a new Pull Request
 
 ## License
 

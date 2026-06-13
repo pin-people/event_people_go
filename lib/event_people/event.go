@@ -22,12 +22,7 @@ type Event struct {
 	Headers       Headers `json:"headers"`
 	Body          any     `json:"body"`
 	SchemaVersion float64 `json:"schemaVersion"`
-	RetryCount    int     `json:"-"`
-}
-
-// IncrementRetryCount increases RetryCount by 1.
-func (event *Event) IncrementRetryCount() {
-	event.RetryCount++
+	RetryCount    int     `json:"retryCount"`
 }
 
 type Payload struct {
@@ -98,6 +93,11 @@ func (event *Event) fixName() {
 	// Routing key must be resource.origin.action.destination — no appName prefix.
 	// The appName prefix belongs only in the queue name (handled in queueNameByRoutingKey).
 	event.Name = event.GetEventName()
+}
+
+// IncrementRetryCount increases RetryCount by one.
+func (event *Event) IncrementRetryCount() {
+	event.RetryCount++
 }
 
 func (event *Event) GetEventName() string {

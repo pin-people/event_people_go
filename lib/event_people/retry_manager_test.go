@@ -1,103 +1,83 @@
 package EventPeople
 
-import (
-	"testing"
-)
+import "testing"
 
-// helper to build a RetryManager with a fixed initialDelay, independent of env vars.
-func newRM(maxAttempts int, strategy string, initialDelay int) *RetryManager {
-	return NewRetryManagerWithDelay(maxAttempts, strategy, initialDelay)
-}
+func TestRetryManagerShouldRetry(t *testing.T) {
+	rm := NewRetryManager(3, 1000, "exponential")
 
-// ----------------------------------------------------------------------------
-// ShouldRetry boundary tests
-// ----------------------------------------------------------------------------
+	if !rm.ShouldRetry() {
+		t.Error("expected ShouldRetry=true on fresh RetryManager (attempt 0 < maxAttempts 3)")
+	}
 
-// retryCount == maxRetries-1  →  still within allowed retries, should retry.
-func TestShouldRetry_AtLastAllowedRetry(t *testing.T) {
-	rm := newRM(3, "exponential", 1000)
-	retryCount := rm.MaxAttempts - 1 // 2
-	if !rm.ShouldRetry(retryCount) {
-		t.Errorf("ShouldRetry(%d) with MaxAttempts=%d: expected true, got false", retryCount, rm.MaxAttempts)
+	rm.CurrentAttempt = 2
+	if !rm.ShouldRetry() {
+		t.Error("expected ShouldRetry=true when attempt=2 < maxAttempts=3")
+	}
+
+	rm.CurrentAttempt = 3
+	if rm.ShouldRetry() {
+		t.Error("expected ShouldRetry=false when attempt=3 >= maxAttempts=3")
 	}
 }
 
-// retryCount == maxRetries  →  exhausted, should NOT retry.
-func TestShouldRetry_AtMaxRetries(t *testing.T) {
-	rm := newRM(3, "exponential", 1000)
-	retryCount := rm.MaxAttempts // 3
-	if rm.ShouldRetry(retryCount) {
-		t.Errorf("ShouldRetry(%d) with MaxAttempts=%d: expected false, got true", retryCount, rm.MaxAttempts)
+func TestRetryManagerExponentialDelay(t *testing.T) {
+	rm := NewRetryManager(3, 1000, "exponential")
+
+	// attempt 0: 1000 * 5^0 = 1000
+	rm.CurrentAttempt = 0
+	if rm.GetNextDelay() != 1000 {
+		t.Errorf("expected 1000 at attempt 0, got %d", rm.GetNextDelay())
+	}
+
+	// attempt 1: 1000 * 5^1 = 5000
+	rm.CurrentAttempt = 1
+	if rm.GetNextDelay() != 5000 {
+		t.Errorf("expected 5000 at attempt 1, got %d", rm.GetNextDelay())
+	}
+
+	// attempt 2: 1000 * 5^2 = 25000
+	rm.CurrentAttempt = 2
+	if rm.GetNextDelay() != 25000 {
+		t.Errorf("expected 25000 at attempt 2, got %d", rm.GetNextDelay())
 	}
 }
 
-// ----------------------------------------------------------------------------
-// GetNextDelay — exponential strategy
-// ----------------------------------------------------------------------------
-
-// retryCount=0 → initialDelay * 5^0 = 1000
-func TestGetNextDelay_Exponential_RetryCount0(t *testing.T) {
-	rm := newRM(5, "exponential", 1000)
-	got := rm.GetNextDelay(0)
-	want := 1000
-	if got != want {
-		t.Errorf("GetNextDelay(0) exponential: want %d, got %d", want, got)
+func TestRetryManagerExponentialDelayCappedAtMaxDelay(t *testing.T) {
+	rm := NewRetryManager(10, 1000, "exponential")
+	rm.CurrentAttempt = 9 // 1000 * 5^9 = way over 600000
+	delay := rm.GetNextDelay()
+	if delay != MaxDelay {
+		t.Errorf("expected delay capped at %d, got %d", MaxDelay, delay)
 	}
 }
 
-// retryCount=1 → initialDelay * 5^1 = 5000
-func TestGetNextDelay_Exponential_RetryCount1(t *testing.T) {
-	rm := newRM(5, "exponential", 1000)
-	got := rm.GetNextDelay(1)
-	want := 5000
-	if got != want {
-		t.Errorf("GetNextDelay(1) exponential: want %d, got %d", want, got)
+func TestRetryManagerFixedDelay(t *testing.T) {
+	rm := NewRetryManager(3, 2000, "fixed")
+
+	rm.CurrentAttempt = 0
+	if rm.GetNextDelay() != 2000 {
+		t.Errorf("expected fixed delay 2000 at attempt 0, got %d", rm.GetNextDelay())
+	}
+
+	rm.CurrentAttempt = 2
+	if rm.GetNextDelay() != 2000 {
+		t.Errorf("expected fixed delay 2000 at attempt 2, got %d", rm.GetNextDelay())
 	}
 }
 
-// retryCount=2 → initialDelay * 5^2 = 25000
-func TestGetNextDelay_Exponential_RetryCount2(t *testing.T) {
-	rm := newRM(5, "exponential", 1000)
-	got := rm.GetNextDelay(2)
-	want := 25000
-	if got != want {
-		t.Errorf("GetNextDelay(2) exponential: want %d, got %d", want, got)
+func TestRetryManagerIncrementAttempt(t *testing.T) {
+	rm := NewRetryManager(3, 1000, "exponential")
+	rm.IncrementAttempt()
+	if rm.CurrentAttempt != 1 {
+		t.Errorf("expected CurrentAttempt=1, got %d", rm.CurrentAttempt)
 	}
 }
 
-// ----------------------------------------------------------------------------
-// GetNextDelay — cap at MaxDelay (600000 ms)
-// ----------------------------------------------------------------------------
-
-// A very large retryCount should be capped at 600000.
-func TestGetNextDelay_Exponential_CappedAtMaxDelay(t *testing.T) {
-	rm := newRM(100, "exponential", 1000)
-	got := rm.GetNextDelay(20) // 1000 * 5^20 is astronomically large
-	if got != rm.MaxDelay {
-		t.Errorf("GetNextDelay(20) exponential: want cap %d, got %d", rm.MaxDelay, got)
-	}
-}
-
-// retryCount=5 with initialDelay=1000: 1000*5^5 = 3_125_000 > 600_000 → capped.
-func TestGetNextDelay_Exponential_ExceedsCapAtRetry5(t *testing.T) {
-	rm := newRM(10, "exponential", 1000)
-	got := rm.GetNextDelay(5)
-	if got != rm.MaxDelay {
-		t.Errorf("GetNextDelay(5) exponential: want cap %d, got %d", rm.MaxDelay, got)
-	}
-}
-
-// ----------------------------------------------------------------------------
-// GetNextDelay — fixed strategy
-// ----------------------------------------------------------------------------
-
-// Fixed strategy always returns initialDelay, regardless of retryCount.
-func TestGetNextDelay_Fixed_AlwaysReturnsInitialDelay(t *testing.T) {
-	rm := newRM(5, "fixed", 2500)
-	for _, rc := range []int{0, 1, 2, 10} {
-		got := rm.GetNextDelay(rc)
-		if got != rm.InitialDelay {
-			t.Errorf("GetNextDelay(%d) fixed: want %d, got %d", rc, rm.InitialDelay, got)
-		}
+func TestRetryManagerReset(t *testing.T) {
+	rm := NewRetryManager(3, 1000, "exponential")
+	rm.CurrentAttempt = 2
+	rm.Reset()
+	if rm.CurrentAttempt != 0 {
+		t.Errorf("expected CurrentAttempt=0 after Reset, got %d", rm.CurrentAttempt)
 	}
 }

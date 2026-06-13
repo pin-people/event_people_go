@@ -1,104 +1,263 @@
 package EventPeople
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// fakeDelivery records the last Ack/Nack call made by RabbitContext.
-type fakeDelivery struct {
-	ackCalled    bool
-	nackCalled   bool
-	nackMultiple bool
-	nackRequeue  bool
+// mockRetryPublisher satisfies retryPublisher and records what was published.
+type mockRetryPublisher struct {
+	published []amqp.Publishing
+	failWith  error
 }
 
-func (f *fakeDelivery) Ack(multiple bool) error {
-	f.ackCalled = true
+func (m *mockRetryPublisher) PublishWithContext(
+	ctx context.Context,
+	exchange, key string,
+	mandatory, immediate bool,
+	msg amqp.Publishing,
+) error {
+	if m.failWith != nil {
+		return m.failWith
+	}
+	m.published = append(m.published, msg)
 	return nil
 }
 
-func (f *fakeDelivery) Nack(multiple, requeue bool) error {
-	f.nackCalled = true
-	f.nackMultiple = multiple
-	f.nackRequeue = requeue
+// mockDelivery is a test double that records ack/nack/reject calls.
+type mockDelivery struct {
+	acked    bool
+	nacked   bool
+	rejected bool
+	requeue  bool
+}
+
+func (m *mockDelivery) Ack(multiple bool) error {
+	m.acked = true
 	return nil
 }
 
-func (f *fakeDelivery) Reject(requeue bool) error { return nil }
-
-func publishErr(_, _ string, _, _ bool, _ amqp.Publishing) error {
-	return errors.New("broker unavailable")
+func (m *mockDelivery) Nack(multiple bool, requeue bool) error {
+	m.nacked = true
+	m.requeue = requeue
+	return nil
 }
 
-func publishOK(_, _ string, _, _ bool, _ amqp.Publishing) error { return nil }
+func (m *mockDelivery) Reject(requeue bool) error {
+	m.rejected = true
+	m.requeue = requeue
+	return nil
+}
 
-func baseCtx(d *fakeDelivery, retryCount, maxRetries int) *RabbitContext {
-	ctx := &RabbitContext{
-		delivery:     d,
-		MaxRetries:   maxRetries,
-		initialDelay: 1000,
+// failingDelivery always returns errors (simulates broker down).
+type failingDelivery struct {
+	nacked  bool
+	requeue bool
+}
+
+func (f *failingDelivery) Ack(multiple bool) error {
+	return errors.New("broker down")
+}
+
+func (f *failingDelivery) Nack(multiple bool, requeue bool) error {
+	f.nacked = true
+	f.requeue = requeue
+	return nil
+}
+
+func (f *failingDelivery) Reject(requeue bool) error {
+	return errors.New("broker down")
+}
+
+func TestRabbitContextSuccess(t *testing.T) {
+	d := &mockDelivery{}
+	ctx := NewContext(d)
+	ctx.Success()
+	if !d.acked {
+		t.Error("expected Ack to be called on Success")
 	}
-	ctx.DeliveryStruct.RetryCount = retryCount
-	ctx.DeliveryStruct.DelayStrategy = "exponential"
-	ctx.DeliveryStruct.QueueName = "test_queue"
-	ctx.DeliveryStruct.MaxRetries = maxRetries
-	return ctx
 }
 
-// TestFail_NilPublishFn_NacksWithoutRequeue: no channel configured → DLQ via nack(false,false).
-func TestFail_NilPublishFn_NacksWithoutRequeue(t *testing.T) {
-	d := &fakeDelivery{}
-	ctx := baseCtx(d, 0, 3) // retries remain, but publishFn is nil
+func TestRabbitContextReject(t *testing.T) {
+	d := &mockDelivery{}
+	ctx := NewContext(d)
+	ctx.Reject()
+	if !d.rejected {
+		t.Error("expected Reject to be called")
+	}
+	if d.requeue {
+		t.Error("expected requeue=false on Reject")
+	}
+}
+
+func TestRabbitContextFailNoChannel(t *testing.T) {
+	// When no AMQP channel is set, Fail must nack(requeue=false).
+	d := &mockDelivery{}
+	ctx := NewContext(d)
 	ctx.Fail()
-	if !d.nackCalled || d.nackMultiple || d.nackRequeue {
-		t.Errorf("expected Nack(false, false); got nackCalled=%v multiple=%v requeue=%v",
-			d.nackCalled, d.nackMultiple, d.nackRequeue)
+	if !d.nacked {
+		t.Error("expected Nack to be called when no channel is configured")
 	}
-	if d.ackCalled {
-		t.Error("Ack must not be called when publishFn is nil")
-	}
-}
-
-// TestFail_PublishError_NacksWithoutRequeue: broker error → DLQ via nack(false,false), not requeue.
-func TestFail_PublishError_NacksWithoutRequeue(t *testing.T) {
-	d := &fakeDelivery{}
-	ctx := baseCtx(d, 0, 3)
-	ctx.publishFn = publishErr
-	ctx.Fail()
-	if !d.nackCalled || d.nackMultiple || d.nackRequeue {
-		t.Errorf("expected Nack(false, false); got nackCalled=%v multiple=%v requeue=%v",
-			d.nackCalled, d.nackMultiple, d.nackRequeue)
-	}
-	if d.ackCalled {
-		t.Error("Ack must not be called on publish failure")
+	if d.requeue {
+		t.Error("expected requeue=false when no channel is configured — must not cause infinite loop")
 	}
 }
 
-// TestFail_RetriesExhausted_NacksWithoutRequeue: no retries left → DLQ via nack(false,false).
-func TestFail_RetriesExhausted_NacksWithoutRequeue(t *testing.T) {
-	d := &fakeDelivery{}
-	ctx := baseCtx(d, 3, 3) // retryCount == maxRetries
-	ctx.publishFn = publishOK
+func TestRabbitContextFailRetriesExhausted(t *testing.T) {
+	// retryCount=3, maxRetries=3 → retries exhausted → nack(requeue=false).
+	d := &mockDelivery{}
+	ctx := NewContextWithRetry(d, nil, "myqueue_retry", 3, 3, "myapp_dlq", 1000, "exponential")
 	ctx.Fail()
-	if !d.nackCalled || d.nackMultiple || d.nackRequeue {
-		t.Errorf("expected Nack(false, false); got nackCalled=%v multiple=%v requeue=%v",
-			d.nackCalled, d.nackMultiple, d.nackRequeue)
+	if !d.nacked {
+		t.Error("expected Nack when retries exhausted")
+	}
+	if d.requeue {
+		t.Error("expected requeue=false when retries exhausted")
 	}
 }
 
-// TestFail_PublishSuccess_Acks: publish succeeds → ack the original delivery.
-func TestFail_PublishSuccess_Acks(t *testing.T) {
-	d := &fakeDelivery{}
-	ctx := baseCtx(d, 0, 3)
-	ctx.publishFn = publishOK
-	ctx.Fail()
-	if !d.ackCalled {
-		t.Error("expected Ack after successful retry publish")
+func TestRabbitContextIsLastRetry(t *testing.T) {
+	// retryCount=2, maxRetries=3 → isLastRetry = (2 >= 3-1) = true
+	d := &mockDelivery{}
+	ctx := NewContextWithRetry(d, nil, "myqueue_retry", 2, 3, "myapp_dlq", 1000, "exponential")
+	if !ctx.IsLastRetry {
+		t.Error("expected IsLastRetry=true when retryCount >= maxRetries-1")
 	}
-	if d.nackCalled {
-		t.Error("Nack must not be called on successful retry publish")
+}
+
+func TestRabbitContextIsNotLastRetry(t *testing.T) {
+	// retryCount=0, maxRetries=3 → isLastRetry = (0 >= 2) = false
+	d := &mockDelivery{}
+	ctx := NewContextWithRetry(d, nil, "myqueue_retry", 0, 3, "myapp_dlq", 1000, "exponential")
+	if ctx.IsLastRetry {
+		t.Error("expected IsLastRetry=false when retryCount=0 and maxRetries=3")
+	}
+}
+
+func TestRabbitContextGetMaxRetries(t *testing.T) {
+	d := &mockDelivery{}
+	ctx := NewContextWithRetry(d, nil, "myqueue_retry", 0, 5, "app_dlq", 1000, "exponential")
+	if ctx.GetMaxRetries() != 5 {
+		t.Errorf("expected GetMaxRetries()=5, got %d", ctx.GetMaxRetries())
+	}
+}
+
+func TestRabbitContextGetIsLastRetry(t *testing.T) {
+	d := &mockDelivery{}
+	ctx := NewContextWithRetry(d, nil, "myqueue_retry", 2, 3, "app_dlq", 1000, "exponential")
+	if !ctx.GetIsLastRetry() {
+		t.Error("expected GetIsLastRetry()=true")
+	}
+}
+
+// TestRabbitContextFailUsesListenerInitialDelay verifies that the listener-resolved
+// initialDelay (not the global Config value) is used when calculating the retry delay.
+// This is the regression test for the bug where initialDelay was always read from
+// Config.InitialDelay, silently dropping any per-listener override.
+func TestRabbitContextFailUsesListenerInitialDelay(t *testing.T) {
+	// Use a listener-level initialDelay of 500ms (fixed strategy, attempt 0 → delay = 500).
+	// The global Config default is 1000ms. If the bug is present, the expiration would be
+	// "1000"; if fixed, it will be "500".
+	listenerInitialDelay := 500
+	listenerDelayStrategy := "fixed"
+
+	d := &mockDelivery{}
+	pub := &mockRetryPublisher{}
+
+	ctx := NewContextWithRetry(
+		d,
+		pub,
+		"myqueue_retry",
+		0,             // retryCount=0 → retries remain (maxAttempts=3)
+		3,             // maxAttempts
+		"myapp_dlq",
+		listenerInitialDelay,
+		listenerDelayStrategy,
+	)
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{}`)}
+
+	ctx.Fail()
+
+	if len(pub.published) != 1 {
+		t.Fatalf("expected exactly 1 message published to retry queue, got %d", len(pub.published))
+	}
+
+	got := pub.published[0].Expiration
+	want := "500"
+	if got != want {
+		t.Errorf("Fail() used wrong initialDelay: Expiration=%q, want %q — listener initialDelay override was silently dropped", got, want)
+	}
+
+	if !d.acked {
+		t.Error("expected Ack after successful publish to retry queue")
+	}
+}
+
+// TestRabbitContextFailUsesListenerDelayStrategy verifies that the listener-resolved
+// delayStrategy is used when calculating the retry delay.
+func TestRabbitContextFailUsesListenerDelayStrategy(t *testing.T) {
+	// exponential at attempt 0: initialDelay * 5^0 = 2000 * 1 = 2000
+	// fixed at attempt 0: initialDelay = 2000
+	// Use exponential to distinguish from fixed: at attempt 1, exponential = 2000*5 = 10000,
+	// fixed = 2000. Test at attempt 1 with exponential strategy.
+	d := &mockDelivery{}
+	pub := &mockRetryPublisher{}
+
+	ctx := NewContextWithRetry(
+		d,
+		pub,
+		"myqueue_retry",
+		1,             // retryCount=1 → retries remain (maxAttempts=3)
+		3,             // maxAttempts
+		"myapp_dlq",
+		2000,          // initialDelay
+		"exponential", // delayStrategy — exponential at attempt 1: 2000 * 5^1 = 10000
+	)
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{}`)}
+
+	ctx.Fail()
+
+	if len(pub.published) != 1 {
+		t.Fatalf("expected exactly 1 message published to retry queue, got %d", len(pub.published))
+	}
+
+	got := pub.published[0].Expiration
+	want := "10000"
+	if got != want {
+		t.Errorf("Fail() used wrong delayStrategy: Expiration=%q, want %q — listener delayStrategy override was silently dropped", got, want)
+	}
+}
+
+// TestRabbitContextFailPublishErrorNacksWithoutRequeue verifies that a publish failure
+// results in nack(requeue=false) — never requeue=true — to avoid infinite redelivery loops.
+func TestRabbitContextFailPublishErrorNacksWithoutRequeue(t *testing.T) {
+	d := &mockDelivery{}
+	pub := &mockRetryPublisher{failWith: errors.New("broker unavailable")}
+
+	ctx := NewContextWithRetry(
+		d,
+		pub,
+		"myqueue_retry",
+		0,
+		3,
+		"myapp_dlq",
+		1000,
+		"exponential",
+	)
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{}`)}
+
+	ctx.Fail()
+
+	if !d.nacked {
+		t.Error("expected Nack when publish to retry queue fails")
+	}
+	if d.requeue {
+		t.Error("expected requeue=false when publish to retry queue fails — requeue=true causes infinite loop")
+	}
+	if d.acked {
+		t.Error("must not Ack when publish to retry queue fails")
 	}
 }

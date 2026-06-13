@@ -1,10 +1,14 @@
 package EventPeople
 
+// ContextInterface is passed to every user callback. It informs the broker
+// of the processing outcome and exposes retry metadata.
 type ContextInterface interface {
 	Initialize(DeliveryInterface)
 	Success()
 	Fail()
 	Reject()
+	GetMaxRetries() int
+	GetIsLastRetry() bool
 }
 
 type DeliveryInterface interface {
