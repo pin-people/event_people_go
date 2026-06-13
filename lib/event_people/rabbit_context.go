@@ -1,112 +1,163 @@
 package EventPeople
 
 import (
-	"log"
-	"os"
+	"context"
+	"fmt"
 	"strconv"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// retryPublisher is the minimal interface needed by RabbitContext.Fail() to
+// publish a message to the retry queue. *amqp.Channel satisfies this interface.
+type retryPublisher interface {
+	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+}
+
+// RabbitContext is the RabbitMQ-specific implementation of ContextInterface.
+// It is injected into every listener callback and manages ack/nack/retry/DLQ routing.
 type RabbitContext struct {
-	ContextInterface
 	delivery       DeliveryInterface
 	DeliveryStruct DeliveryStruct
-	MaxRetries     int
-	DLQName        string
-	channel        *amqp.Channel
-	publishFn      func(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
-	initialDelay   int // resolved once at construction time from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS
+	// MaxRetries is the total retry attempts configured for this listener.
+	MaxRetries int
+	// IsLastRetry is true when this is the final retry attempt.
+	IsLastRetry bool
+	// DLQName is the dead-letter queue name for this listener.
+	DLQName string
+	// InitialDelay is the base retry delay in milliseconds resolved for this listener.
+	InitialDelay int
+	// DelayStrategy is the retry delay strategy resolved for this listener ("fixed" or "exponential").
+	DelayStrategy string
+	// retryQueueName is the name of the per-queue retry queue.
+	retryQueueName string
+	// retryCount is the current retry attempt count from the event.
+	retryCount int
+	// amqpChannel is used to publish to the retry queue.
+	amqpChannel retryPublisher
 }
 
-// IsLastRetry returns true when the current retry count is at or beyond the last allowed retry.
-func (context *RabbitContext) IsLastRetry() bool {
-	return context.DeliveryStruct.RetryCount >= context.MaxRetries-1
-}
-
-func (context RabbitContext) Initialize(delivery DeliveryInterface) {
-	context.delivery = delivery
-}
-
-func (context RabbitContext) Success() {
-	context.delivery.Ack(false)
-}
-
-// Fail publishes the message to the retry queue if retries remain, otherwise Nacks without requeue.
-func (context *RabbitContext) Fail() {
-	retryCount := context.DeliveryStruct.RetryCount
-	maxRetries := context.MaxRetries
-	queueName := context.DeliveryStruct.QueueName
-	delayStrategy := context.DeliveryStruct.DelayStrategy
-
-	rm := NewRetryManagerWithDelay(maxRetries, delayStrategy, context.initialDelay)
-
-	if rm.ShouldRetry(retryCount) {
-		retryQueueName := queueName + "_retry"
-		delay := rm.GetNextDelay(retryCount)
-
-		if context.publishFn != nil {
-			err := context.publishFn(
-				"",              // default exchange
-				retryQueueName, // routing key = retry queue name
-				false,
-				false,
-				amqp.Publishing{
-					Headers:     amqp.Table{"x-event-people-retries": int32(retryCount + 1)},
-					Expiration:  strconv.Itoa(delay),
-					Body:        context.DeliveryStruct.Body,
-					ContentType: context.DeliveryStruct.ContentType,
-				},
-			)
-			if err != nil {
-				log.Printf("Failed to publish to retry queue: %v", err)
-				context.delivery.Nack(false, false)
-				return
-			}
-		} else {
-			log.Println("No channel available for retry publish; falling back to nack without requeue (→ DLQ)")
-			context.delivery.Nack(false, false)
-			return
-		}
-		context.delivery.Ack(false)
-	} else {
-		// Exhausted retries — send to DLQ via nack without requeue (DLX will route to DLQ)
-		context.delivery.Nack(false, false)
-	}
-}
-
-// Reject nacks without requeue, triggering DLX → DLQ routing.
-func (context RabbitContext) Reject() {
-	context.delivery.Nack(false, false)
-}
-
-// NewContext creates a RabbitContext with delivery only (no retry config).
-// Used for backward-compatibility paths.
+// NewContext creates a RabbitContext with default (no-retry) configuration.
+// Use NewContextWithRetry to attach retry parameters.
 func NewContext(delivery DeliveryInterface) *RabbitContext {
-	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
-	context := &RabbitContext{
-		delivery:     delivery,
-		MaxRetries:   Config.MaxAttempts(),
-		DLQName:      appName + "_dlq",
-		initialDelay: resolveInitialDelay(),
-	}
-	return context
+	ctx := &RabbitContext{delivery: delivery}
+	return ctx
 }
 
-// NewContextWithRetry creates a RabbitContext with full retry configuration.
-func NewContextWithRetry(delivery DeliveryInterface, channel *amqp.Channel, queueName string, maxRetries int, delayStrategy string, retryCount int) *RabbitContext {
-	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
-	ctx := &RabbitContext{
-		delivery:     delivery,
-		MaxRetries:   maxRetries,
-		DLQName:      appName + "_dlq",
-		channel:      channel,
-		publishFn:    channel.Publish,
-		initialDelay: resolveInitialDelay(),
+// NewContextWithRetry creates a fully configured RabbitContext for retry-aware dispatch.
+func NewContextWithRetry(
+	delivery DeliveryInterface,
+	amqpChannel retryPublisher,
+	retryQueueName string,
+	retryCount int,
+	maxRetries int,
+	dlqName string,
+	initialDelay int,
+	delayStrategy string,
+) *RabbitContext {
+	return &RabbitContext{
+		delivery:       delivery,
+		amqpChannel:    amqpChannel,
+		retryQueueName: retryQueueName,
+		retryCount:     retryCount,
+		MaxRetries:     maxRetries,
+		IsLastRetry:    retryCount >= maxRetries-1,
+		DLQName:        dlqName,
+		InitialDelay:   initialDelay,
+		DelayStrategy:  delayStrategy,
 	}
-	ctx.DeliveryStruct.MaxRetries = maxRetries
-	ctx.DeliveryStruct.DelayStrategy = delayStrategy
-	ctx.DeliveryStruct.QueueName = queueName
-	ctx.DeliveryStruct.RetryCount = retryCount
-	return ctx
+}
+
+func (ctx *RabbitContext) Initialize(delivery DeliveryInterface) {
+	ctx.delivery = delivery
+}
+
+// GetMaxRetries satisfies ContextInterface.
+func (ctx *RabbitContext) GetMaxRetries() int {
+	return ctx.MaxRetries
+}
+
+// GetIsLastRetry satisfies ContextInterface.
+func (ctx *RabbitContext) GetIsLastRetry() bool {
+	return ctx.IsLastRetry
+}
+
+// Success acknowledges successful processing (ack). Removes message from queue.
+func (ctx *RabbitContext) Success() {
+	ctx.delivery.Ack(false)
+}
+
+// Fail indicates failure. Publishes the message to the retry queue with a backoff
+// delay when retries remain, then acks the original delivery. When retries are
+// exhausted, or when publishing to the retry queue itself fails (broker unavailable,
+// channel closed), MUST nack(requeue=false) so the DLX routes the message to the DLQ.
+// Nacking with requeue=true on publish failure causes an infinite redelivery loop
+// because x-event-people-retries is never incremented.
+func (ctx *RabbitContext) Fail() {
+	// No retry channel — legacy or no-retry path: nack without requeue → DLQ via DLX.
+	if ctx.amqpChannel == nil || ctx.retryQueueName == "" {
+		ctx.delivery.Nack(false, false)
+		return
+	}
+
+	rm := NewRetryManager(ctx.MaxRetries, ctx.InitialDelay, ctx.DelayStrategy)
+	rm.CurrentAttempt = ctx.retryCount
+
+	if !rm.ShouldRetry() {
+		// Retries exhausted: nack(requeue=false) → DLX → DLQ.
+		ctx.delivery.Nack(false, false)
+		return
+	}
+
+	delay := rm.GetNextDelay()
+	nextRetryCount := ctx.retryCount + 1
+
+	headers := amqp.Table{
+		"x-event-people-retries": int64(nextRetryCount),
+	}
+
+	body := ctx.DeliveryStruct.Body
+	if body == nil {
+		// Fallback to delivery body if DeliveryStruct wasn't populated.
+		if ds, ok := ctx.delivery.(interface{ GetBody() []byte }); ok {
+			body = ds.GetBody()
+		}
+	}
+
+	msg := amqp.Publishing{
+		DeliveryMode: amqp.Persistent,
+		Timestamp:    time.Now(),
+		ContentType:  "text/plain",
+		Body:         body,
+		Headers:      headers,
+		Expiration:   strconv.Itoa(delay),
+	}
+
+	pubCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := ctx.amqpChannel.PublishWithContext(
+		pubCtx,
+		"",                 // default exchange
+		ctx.retryQueueName, // routing key = queue name
+		false,
+		false,
+		msg,
+	)
+	if err != nil {
+		// Publish to retry queue failed: nack(requeue=false) → DLX → DLQ.
+		// Never nack(requeue=true) — that causes an infinite redelivery loop.
+		fmt.Printf("EventPeople: failed to publish to retry queue %s: %v — nacking to DLQ\n", ctx.retryQueueName, err)
+		ctx.delivery.Nack(false, false)
+		return
+	}
+
+	// Successfully published to retry queue: ack the original delivery.
+	ctx.delivery.Ack(false)
+}
+
+// Reject rejects the event. Routes directly to DLQ without retrying (nack, requeue=false).
+func (ctx *RabbitContext) Reject() {
+	ctx.delivery.Reject(false)
 }

@@ -84,7 +84,6 @@ func (queue *Queue) exchangeBind(queueName string, routingKey string) error {
 	}
 
 	err = queue.channel.QueueBind(queueName, routingKey, os.Getenv("RABBIT_EVENT_PEOPLE_TOPIC_NAME"), false, nil)
-
 	if err != nil {
 		return err
 	}
@@ -124,7 +123,7 @@ func (queue *Queue) declareDLXTopology() error {
 func (queue *Queue) declareRetryQueue(queueName string) error {
 	retryQueueName := queueName + "_retry"
 	args := amqp.Table{
-		"x-dead-letter-exchange":    "",         // default exchange
+		"x-dead-letter-exchange":    "",        // default exchange
 		"x-dead-letter-routing-key": queueName, // route back to original queue
 		// NOTE: x-message-ttl is intentionally NOT set here;
 		// per-message TTL is controlled via the Expiration field of each Publishing.
@@ -158,11 +157,16 @@ func (queue *Queue) createQueueAndBind(routingKey string) error {
 	return err
 }
 
+// queueNameByRoutingKey returns '{appName}-{resource}.{origin}.{action}.all'.
+// It always normalizes the destination segment to 'all', regardless of input
+// routing key — per spec routing_convention note and DEV-GO-002 fix.
 func (queue *Queue) queueNameByRoutingKey(routingKey string) string {
 	eventNameSplited := strings.Split(routingKey, ".")
 	if len(eventNameSplited) <= 3 {
 		eventNameSplited = append(eventNameSplited, "all")
 	} else {
+		// Normalize the destination segment (index 3) to "all".
+		// The exchange binding still uses the original routing key for correct routing.
 		eventNameSplited[3] = "all"
 	}
 	return os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME") + "-" + strings.Join(eventNameSplited, ".")

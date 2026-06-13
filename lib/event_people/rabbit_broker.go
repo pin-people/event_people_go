@@ -107,6 +107,7 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 	}
 
 	queueName := queue.queueNameByRoutingKey(eventName)
+	retryQueueName := queueName + "_retry"
 
 	for delivery := range deliveries {
 		var eventMessage Event
@@ -126,6 +127,8 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 				retryCount = int(val)
 			case float64:
 				retryCount = int(val)
+			case int:
+				retryCount = val
 			}
 		}
 		// Clamp to non-negative
@@ -154,10 +157,12 @@ func (rabbit *RabbitBroker) Consume(eventName string, callback Callback, retryCo
 		rabbitContext := NewContextWithRetry(
 			delivery,
 			ch,
-			queueName,
-			rc.MaxAttempts,
-			rc.DelayStrategy,
+			retryQueueName,
 			retryCount,
+			rc.MaxAttempts,
+			rc.DLQName,
+			rc.InitialDelay,
+			rc.DelayStrategy,
 		)
 		rabbitContext.DeliveryStruct = deliveryStruct
 

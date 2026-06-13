@@ -53,6 +53,10 @@ func (manager manager) ConsumeAllListeners() {
 
 	for index := range ListenerConfigurationsList {
 		listenerItem := ListenerConfigurationsList[index]
+
+		// Resolve retry config: listener-level overrides > Config defaults.
+		retryConfig := listenerItem.Listener.ResolvedRetryConfig()
+
 		go ListenTo(listenerItem.EventName, func(event Event, context ContextInterface) {
 			for {
 				if !Pool.IsWorkerAvailable() {
@@ -63,13 +67,21 @@ func (manager manager) ConsumeAllListeners() {
 			}
 			delivery := context.(*RabbitContext)
 			if delivery.DeliveryStruct.DeliveryInterface != nil {
+				// Extract the AMQP channel from the RabbitContext for retry publishing.
+				var amqpChan retryPublisher
+				var retryQName string
+				if delivery.amqpChannel != nil {
+					amqpChan = delivery.amqpChannel
+					retryQName = delivery.retryQueueName
+				}
+
 				go Pool.Submit(&Job{
 					job: ContextDelivery{
-						delivery:  &delivery.DeliveryStruct,
-						rabbitCtx: delivery,
-						callback: func(event Event, contextEvent ContextInterface) {
-							listenerItem.Method(event, contextEvent)
-						},
+						delivery:       &delivery.DeliveryStruct,
+						callback:       Callback(listenerItem.Method),
+						retryQueueName: retryQName,
+						amqpChannel:    amqpChan,
+						retryConfig:    retryConfig,
 					},
 				})
 				return

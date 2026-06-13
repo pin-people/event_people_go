@@ -1,64 +1,56 @@
 package EventPeople
 
-import (
-	"math"
-	"os"
-	"strconv"
+import "math"
+
+const (
+	// MaxDelay is the maximum retry delay in milliseconds (10 minutes).
+	MaxDelay = 600000
 )
 
-// RetryManager handles retry logic including delay calculation and retry eligibility.
+// RetryManager manages retry policies and dead-lettering for a single listener.
+// It is an internal component — not exposed directly to users.
 type RetryManager struct {
-	MaxAttempts   int
-	DelayStrategy string
-	InitialDelay  int // from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS, default 1000
-	MaxDelay      int // 600000ms = 10 minutes
+	MaxAttempts    int
+	InitialDelay   int
+	DelayStrategy  string
+	CurrentAttempt int
 }
 
 // NewRetryManager creates a RetryManager with the given configuration.
-// InitialDelay is read from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS (default 1000).
-// Prefer NewRetryManagerWithDelay when the caller has already resolved the delay
-// (e.g. stored in RabbitContext) to avoid repeated env-var lookups.
-func NewRetryManager(maxAttempts int, delayStrategy string) *RetryManager {
-	return NewRetryManagerWithDelay(maxAttempts, delayStrategy, resolveInitialDelay())
-}
-
-// NewRetryManagerWithDelay creates a RetryManager with a pre-resolved initialDelay.
-func NewRetryManagerWithDelay(maxAttempts int, delayStrategy string, initialDelay int) *RetryManager {
+func NewRetryManager(maxAttempts int, initialDelay int, delayStrategy string) *RetryManager {
 	return &RetryManager{
 		MaxAttempts:   maxAttempts,
-		DelayStrategy: delayStrategy,
 		InitialDelay:  initialDelay,
-		MaxDelay:      600000,
+		DelayStrategy: delayStrategy,
 	}
 }
 
-// resolveInitialDelay reads RABBIT_EVENT_PEOPLE_RETRY_TTL_MS once and returns the value.
-func resolveInitialDelay() int {
-	initialDelay := 1000
-	if v := os.Getenv("RABBIT_EVENT_PEOPLE_RETRY_TTL_MS"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			initialDelay = parsed
-		}
-	}
-	return initialDelay
+// ShouldRetry returns true if CurrentAttempt < MaxAttempts.
+func (rm *RetryManager) ShouldRetry() bool {
+	return rm.CurrentAttempt < rm.MaxAttempts
 }
 
-// ShouldRetry returns true if retryCount is less than MaxAttempts.
-func (r *RetryManager) ShouldRetry(retryCount int) bool {
-	return retryCount < r.MaxAttempts
-}
-
-// GetNextDelay returns the delay in milliseconds for the next retry attempt.
-// Exponential: min(initialDelay * 5^retryCount, maxDelay)
-// Fixed: initialDelay
-func (r *RetryManager) GetNextDelay(retryCount int) int {
-	if r.DelayStrategy == "fixed" {
-		return r.InitialDelay
+// GetNextDelay calculates the next delay in milliseconds.
+// Exponential: min(initialDelay * (5 ^ currentAttempt), maxDelay).
+// Fixed: initialDelay (constant).
+func (rm *RetryManager) GetNextDelay() int {
+	if rm.DelayStrategy == "fixed" {
+		return rm.InitialDelay
 	}
-	// exponential (default)
-	delay := float64(r.InitialDelay) * math.Pow(5, float64(retryCount))
-	if delay > float64(r.MaxDelay) {
-		return r.MaxDelay
+	// exponential: initialDelay * (5 ^ currentAttempt)
+	delay := float64(rm.InitialDelay) * math.Pow(5, float64(rm.CurrentAttempt))
+	if delay > MaxDelay {
+		return MaxDelay
 	}
 	return int(delay)
+}
+
+// IncrementAttempt increments the current attempt counter.
+func (rm *RetryManager) IncrementAttempt() {
+	rm.CurrentAttempt++
+}
+
+// Reset resets CurrentAttempt to 0 for a new event.
+func (rm *RetryManager) Reset() {
+	rm.CurrentAttempt = 0
 }
