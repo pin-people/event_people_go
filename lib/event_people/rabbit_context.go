@@ -8,13 +8,20 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// amqpPublisher is the narrow slice of *amqp.Channel that the context needs to
+// publish messages (to the retry queue and to the DLQ). Declaring it as an
+// interface keeps the publish paths unit-testable with a fake.
+type amqpPublisher interface {
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+}
+
 type RabbitContext struct {
 	ContextInterface
 	delivery       DeliveryInterface
 	DeliveryStruct DeliveryStruct
 	MaxRetries     int
 	DLQName        string
-	channel        *amqp.Channel
+	channel        amqpPublisher
 	initialDelay   int // resolved once at construction time from RABBIT_EVENT_PEOPLE_RETRY_TTL_MS
 }
 
@@ -74,9 +81,40 @@ func (context *RabbitContext) Fail() {
 	}
 }
 
-// Reject nacks without requeue, triggering DLX → DLQ routing.
+// Reject routes the message straight to the application-level DLQ (a plain
+// <app>_dlq queue) and acks the original delivery. This follows the EventPeople
+// spec (§C): the library routes to its own DLQ instead of relying on RabbitMQ's
+// broker-side dead-letter-exchange. With no x-dead-letter-exchange argument on
+// the main queue, library upgrades stay drop-in (no PRECONDITION_FAILED).
 func (context RabbitContext) Reject() {
-	context.delivery.Nack(false, false)
+	if context.channel == nil {
+		// No channel to publish with — fall back to a plain nack without requeue.
+		log.Println("No channel available for DLQ publish on Reject; falling back to nack")
+		context.delivery.Nack(false, false)
+		return
+	}
+	if err := context.publishToDLQ(); err != nil {
+		log.Printf("Failed to publish to DLQ on Reject: %v", err)
+		context.delivery.Nack(false, false)
+		return
+	}
+	context.delivery.Ack(false)
+}
+
+// publishToDLQ forwards the current message body to the application-level DLQ
+// via the default exchange (routing key = DLQ name).
+func (context RabbitContext) publishToDLQ() error {
+	return context.channel.Publish(
+		"",              // default exchange
+		context.DLQName, // routing key = DLQ queue name
+		false,
+		false,
+		amqp.Publishing{
+			Body:        context.DeliveryStruct.Body,
+			ContentType: context.DeliveryStruct.ContentType,
+			Headers:     amqp.Table{"x-event-people-retries": int32(context.DeliveryStruct.RetryCount)},
+		},
+	)
 }
 
 // NewContext creates a RabbitContext with delivery only (no retry config).
