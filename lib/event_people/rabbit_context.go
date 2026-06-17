@@ -38,7 +38,8 @@ func (context RabbitContext) Success() {
 	context.delivery.Ack(false)
 }
 
-// Fail publishes the message to the retry queue if retries remain, otherwise Nacks without requeue.
+// Fail publishes the message to the retry queue if retries remain; once retries
+// are exhausted it publishes the message to the application-level DLQ and acks.
 func (context *RabbitContext) Fail() {
 	retryCount := context.DeliveryStruct.RetryCount
 	maxRetries := context.MaxRetries

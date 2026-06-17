@@ -145,7 +145,7 @@ func (queue *Queue) createQueueAndBind(routingKey string) error {
 		return err
 	}
 
-	// Declare main queue with dead-letter-exchange
+	// Declare the main queue (argument-free; dead-lettering is app-level)
 	err = queue.createQueue(queueName)
 	if err != nil {
 		return err
