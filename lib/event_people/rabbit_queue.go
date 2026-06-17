@@ -18,13 +18,25 @@ type QueueInterface interface {
 	callback()
 }
 
+// amqpChannel is the slice of *amqp.Channel that Queue relies on. Declaring it
+// as an interface keeps the queue-declaration path unit-testable with a fake.
+type amqpChannel interface {
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error)
+	QueueInspect(name string) (amqp.Queue, error)
+	QueueBind(name, key, exchange string, noWait bool, args amqp.Table) error
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	ExchangeDeclarePassive(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	Qos(prefetchCount, prefetchSize int, global bool) error
+	Consume(queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (<-chan amqp.Delivery, error)
+}
+
 type Queue struct {
 	amqpQueue *amqp.Queue
-	channel   *amqp.Channel
+	channel   amqpChannel
 	QueueInterface
 }
 
-func (queue *Queue) Init(channel *amqp.Channel) {
+func (queue *Queue) Init(channel amqpChannel) {
 	queue.channel = channel
 }
 
@@ -54,13 +66,12 @@ func (queue *Queue) QueueName(routingKey string) string {
 }
 
 func (queue *Queue) createQueue(queueName string) error {
-	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
-	dlxName := appName + "_dlx"
-
-	args := amqp.Table{
-		"x-dead-letter-exchange": dlxName,
-	}
-	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, args)
+	// The main queue is declared WITHOUT a dead-letter-exchange argument.
+	// Dead-lettering is handled at the application level (see RabbitContext:
+	// Reject and retry exhaustion publish to <app>_dlq). Keeping the main queue
+	// argument-free means upgrades over legacy queues never hit
+	// PRECONDITION_FAILED on redeclare.
+	localQueue, err := queue.channel.QueueDeclare(queueName, true, false, false, false, nil)
 	if err != nil {
 		return err
 	}
@@ -91,31 +102,17 @@ func (queue *Queue) exchangeBind(queueName string, routingKey string) error {
 	return nil
 }
 
-// declareDLXTopology declares the DLX exchange and DLQ (idempotent).
-func (queue *Queue) declareDLXTopology() error {
+// declareDLQ declares the application-level dead-letter queue (idempotent).
+// It is a plain durable queue, not bound to any dead-letter-exchange: the
+// library publishes failed messages to it directly (see RabbitContext). No DLX
+// fanout exchange or binding is created, so there is no broker-side topology to
+// drift between library versions.
+func (queue *Queue) declareDLQ() error {
 	appName := os.Getenv("RABBIT_EVENT_PEOPLE_APP_NAME")
-	dlxName := appName + "_dlx"
 	dlqName := appName + "_dlq"
 
-	// Declare DLX as a fanout exchange
-	err := queue.channel.ExchangeDeclare(dlxName, "fanout", true, false, false, false, nil)
-	if err != nil {
-		return err
-	}
-
-	// Declare DLQ
-	_, err = queue.channel.QueueDeclare(dlqName, true, false, false, false, nil)
-	if err != nil {
-		return err
-	}
-
-	// Bind DLQ to DLX with empty routing key
-	err = queue.channel.QueueBind(dlqName, "", dlxName, false, nil)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := queue.channel.QueueDeclare(dlqName, true, false, false, false, nil)
+	return err
 }
 
 // declareRetryQueue declares the retry queue for a given main queue name (idempotent).
@@ -136,8 +133,8 @@ func (queue *Queue) declareRetryQueue(queueName string) error {
 func (queue *Queue) createQueueAndBind(routingKey string) error {
 	queueName := queue.queueNameByRoutingKey(routingKey)
 
-	// Declare DLX topology first (idempotent)
-	err := queue.declareDLXTopology()
+	// Declare the application-level DLQ first (idempotent)
+	err := queue.declareDLQ()
 	if err != nil {
 		return err
 	}
