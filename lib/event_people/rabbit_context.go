@@ -76,8 +76,19 @@ func (context *RabbitContext) Fail() {
 		}
 		context.delivery.Ack(false)
 	} else {
-		// Exhausted retries — send to DLQ via nack without requeue (DLX will route to DLQ)
-		context.delivery.Nack(false, false)
+		// Exhausted retries — route the message to the application-level DLQ
+		// (a plain <app>_dlq queue) and ack the original delivery.
+		if context.channel == nil {
+			log.Println("No channel available for DLQ publish on exhaustion; falling back to nack")
+			context.delivery.Nack(false, false)
+			return
+		}
+		if err := context.publishToDLQ(); err != nil {
+			log.Printf("Failed to publish to DLQ on retry exhaustion: %v", err)
+			context.delivery.Nack(false, false)
+			return
+		}
+		context.delivery.Ack(false)
 	}
 }
 
