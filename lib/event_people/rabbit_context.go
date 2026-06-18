@@ -105,8 +105,13 @@ func (ctx *RabbitContext) Fail() {
 	rm.CurrentAttempt = ctx.retryCount
 
 	if !rm.ShouldRetry() {
-		// Retries exhausted: nack(requeue=false) → DLX → DLQ.
-		ctx.delivery.Nack(false, false)
+		// Retries exhausted: publish the message to the application-level DLQ + ack.
+		if err := ctx.publishToDLQ(); err != nil {
+			fmt.Printf("EventPeople: failed to publish to DLQ %s on retry exhaustion: %v — nacking\n", ctx.DLQName, err)
+			ctx.delivery.Nack(false, false)
+			return
+		}
+		ctx.delivery.Ack(false)
 		return
 	}
 
@@ -159,5 +164,36 @@ func (ctx *RabbitContext) Fail() {
 
 // Reject rejects the event. Routes directly to DLQ without retrying (nack, requeue=false).
 func (ctx *RabbitContext) Reject() {
-	ctx.delivery.Reject(false)
+	if ctx.amqpChannel == nil || ctx.DLQName == "" {
+		ctx.delivery.Nack(false, false)
+		return
+	}
+	if err := ctx.publishToDLQ(); err != nil {
+		fmt.Printf("EventPeople: failed to publish to DLQ %s on Reject: %v — nacking\n", ctx.DLQName, err)
+		ctx.delivery.Nack(false, false)
+		return
+	}
+	ctx.delivery.Ack(false)
+}
+
+// publishToDLQ forwards the current message body to the application-level DLQ via
+// the default exchange (routing key = DLQ name), so failed messages are dead-lettered
+// without relying on a broker dead-letter-exchange.
+func (ctx *RabbitContext) publishToDLQ() error {
+	pubCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return ctx.amqpChannel.PublishWithContext(
+		pubCtx,
+		"",          // default exchange
+		ctx.DLQName, // routing key = DLQ queue name
+		false,
+		false,
+		amqp.Publishing{
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			ContentType:  ctx.DeliveryStruct.ContentType,
+			Body:         ctx.DeliveryStruct.Body,
+			Headers:      amqp.Table{"x-event-people-retries": int64(ctx.retryCount)},
+		},
+	)
 }

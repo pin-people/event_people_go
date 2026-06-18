@@ -11,6 +11,7 @@ import (
 // mockRetryPublisher satisfies retryPublisher and records what was published.
 type mockRetryPublisher struct {
 	published []amqp.Publishing
+	keys      []string
 	failWith  error
 }
 
@@ -24,6 +25,7 @@ func (m *mockRetryPublisher) PublishWithContext(
 		return m.failWith
 	}
 	m.published = append(m.published, msg)
+	m.keys = append(m.keys, key)
 	return nil
 }
 
@@ -81,15 +83,52 @@ func TestRabbitContextSuccess(t *testing.T) {
 	}
 }
 
-func TestRabbitContextReject(t *testing.T) {
+// Reject with no channel/DLQ configured falls back to nack(requeue=false).
+func TestRabbitContextRejectNoChannelNacks(t *testing.T) {
 	d := &mockDelivery{}
 	ctx := NewContext(d)
 	ctx.Reject()
-	if !d.rejected {
-		t.Error("expected Reject to be called")
+	if !d.nacked || d.requeue {
+		t.Error("expected Nack(requeue=false) fallback when no channel/DLQ is configured")
 	}
-	if d.requeue {
-		t.Error("expected requeue=false on Reject")
+}
+
+// Reject routes the message to the application-level DLQ (publish + ack), not a
+// broker dead-letter-exchange.
+func TestRabbitContextRejectPublishesToDLQ(t *testing.T) {
+	d := &mockDelivery{}
+	pub := &mockRetryPublisher{}
+	ctx := NewContextWithRetry(d, pub, "myqueue_retry", 0, 3, "myapp_dlq", 1000, "exponential")
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{"x":1}`), ContentType: "application/json"}
+
+	ctx.Reject()
+
+	if len(pub.published) != 1 || pub.keys[0] != "myapp_dlq" {
+		t.Fatalf("Reject: expected 1 publish to myapp_dlq, got %d keys=%v", len(pub.published), pub.keys)
+	}
+	if string(pub.published[0].Body) != `{"x":1}` {
+		t.Errorf("Reject: expected body forwarded to DLQ, got %q", string(pub.published[0].Body))
+	}
+	if !d.acked || d.nacked {
+		t.Error("Reject: expected Ack after DLQ publish, no Nack")
+	}
+}
+
+// Retry exhaustion (with a channel) routes the message to the DLQ via publish + ack.
+func TestRabbitContextFailExhaustedPublishesToDLQ(t *testing.T) {
+	d := &mockDelivery{}
+	pub := &mockRetryPublisher{}
+	// retryCount=3, maxRetries=3 → exhausted; channel present → publish to DLQ.
+	ctx := NewContextWithRetry(d, pub, "myqueue_retry", 3, 3, "myapp_dlq", 1000, "exponential")
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{}`)}
+
+	ctx.Fail()
+
+	if len(pub.published) != 1 || pub.keys[0] != "myapp_dlq" {
+		t.Fatalf("exhausted: expected 1 publish to myapp_dlq, got %d keys=%v", len(pub.published), pub.keys)
+	}
+	if !d.acked || d.nacked {
+		t.Error("exhausted: expected Ack after DLQ publish, no Nack")
 	}
 }
 
