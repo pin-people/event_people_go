@@ -182,6 +182,15 @@ func (ctx *RabbitContext) Reject() {
 func (ctx *RabbitContext) publishToDLQ() error {
 	pubCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// The original message may not have its ContentType populated upstream.
+	// An empty ContentType produces an unparseable DLQ message, so fall back to
+	// the same value used by every other publish path in this implementation.
+	contentType := ctx.DeliveryStruct.ContentType
+	if contentType == "" {
+		contentType = "text/plain"
+	}
+
 	return ctx.amqpChannel.PublishWithContext(
 		pubCtx,
 		"",          // default exchange
@@ -191,7 +200,7 @@ func (ctx *RabbitContext) publishToDLQ() error {
 		amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
 			Timestamp:    time.Now(),
-			ContentType:  ctx.DeliveryStruct.ContentType,
+			ContentType:  contentType,
 			Body:         ctx.DeliveryStruct.Body,
 			Headers:      amqp.Table{"x-event-people-retries": int64(ctx.retryCount)},
 		},
