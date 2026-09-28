@@ -20,3 +20,6 @@ go.work
 
 # VSCode config folder
 .vscode
+
+# Git worktrees gaia creates, one per task (gaia's worktree skill).
+.claude/worktrees/
