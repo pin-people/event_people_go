@@ -97,7 +97,7 @@ func (ctx *RabbitContext) Success() {
 func (ctx *RabbitContext) Fail() {
 	// No retry channel — legacy or no-retry path: nack without requeue → DLQ via DLX.
 	if ctx.amqpChannel == nil || ctx.retryQueueName == "" {
-		ctx.delivery.Nack(false, false)
+		ctx.nackToDLQ(fmt.Sprintf("failed %s with no retry queue", ctx.DeliveryStruct.RoutingKey))
 		return
 	}
 
@@ -106,7 +106,8 @@ func (ctx *RabbitContext) Fail() {
 
 	if !rm.ShouldRetry() {
 		// Retries exhausted: nack(requeue=false) → DLX → DLQ.
-		ctx.delivery.Nack(false, false)
+		ctx.nackToDLQ(fmt.Sprintf("retries exhausted for %s on %s after %d attempts",
+			ctx.DeliveryStruct.RoutingKey, ctx.retryQueueName, ctx.retryCount))
 		return
 	}
 
@@ -148,13 +149,19 @@ func (ctx *RabbitContext) Fail() {
 	if err != nil {
 		// Publish to retry queue failed: nack(requeue=false) → DLX → DLQ.
 		// Never nack(requeue=true) — that causes an infinite redelivery loop.
-		fmt.Printf("EventPeople: failed to publish to retry queue %s: %v — nacking to DLQ\n", ctx.retryQueueName, err)
-		ctx.delivery.Nack(false, false)
+		ctx.nackToDLQ(fmt.Sprintf("failed to publish to retry queue %s: %v", ctx.retryQueueName, err))
 		return
 	}
 
 	// Successfully published to retry queue: ack the original delivery.
 	ctx.delivery.Ack(false)
+}
+
+// nackToDLQ nacks without requeue, so the DLX routes the message to the DLQ, and prints one line saying so:
+// nothing else marks a message reaching the DLQ, and a log alert counts these lines.
+func (ctx *RabbitContext) nackToDLQ(reason string) {
+	fmt.Printf("EventPeople: %s — nacking to DLQ\n", reason)
+	ctx.delivery.Nack(false, false)
 }
 
 // Reject rejects the event. Routes directly to DLQ without retrying (nack, requeue=false).

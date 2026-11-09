@@ -3,6 +3,9 @@ package EventPeople
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -171,8 +174,8 @@ func TestRabbitContextFailUsesListenerInitialDelay(t *testing.T) {
 		d,
 		pub,
 		"myqueue_retry",
-		0,             // retryCount=0 → retries remain (maxAttempts=3)
-		3,             // maxAttempts
+		0, // retryCount=0 → retries remain (maxAttempts=3)
+		3, // maxAttempts
 		"myapp_dlq",
 		listenerInitialDelay,
 		listenerDelayStrategy,
@@ -210,8 +213,8 @@ func TestRabbitContextFailUsesListenerDelayStrategy(t *testing.T) {
 		d,
 		pub,
 		"myqueue_retry",
-		1,             // retryCount=1 → retries remain (maxAttempts=3)
-		3,             // maxAttempts
+		1, // retryCount=1 → retries remain (maxAttempts=3)
+		3, // maxAttempts
 		"myapp_dlq",
 		2000,          // initialDelay
 		"exponential", // delayStrategy — exponential at attempt 1: 2000 * 5^1 = 10000
@@ -259,5 +262,58 @@ func TestRabbitContextFailPublishErrorNacksWithoutRequeue(t *testing.T) {
 	}
 	if d.acked {
 		t.Error("must not Ack when publish to retry queue fails")
+	}
+}
+
+// captureStdout returns what fn printed to stdout.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = writer
+	fn()
+	os.Stdout = original
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+	printed, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return string(printed)
+}
+
+// Every way to the DLQ prints one line with "nacking to DLQ", so a log alert sees each message that lands there.
+func TestRabbitContextFailRetriesExhaustedLogsTheDLQ(t *testing.T) {
+	ctx := NewContextWithRetry(&mockDelivery{}, &mockRetryPublisher{}, "myqueue_retry", 3, 3, "myapp_dlq", 1000, "exponential")
+
+	printed := captureStdout(t, ctx.Fail)
+
+	if !strings.Contains(printed, "retries exhausted") || !strings.Contains(printed, "nacking to DLQ") {
+		t.Errorf("printed %q, want a retries exhausted line nacking to DLQ", printed)
+	}
+}
+
+func TestRabbitContextFailNoChannelLogsTheDLQ(t *testing.T) {
+	ctx := NewContext(&mockDelivery{})
+
+	printed := captureStdout(t, ctx.Fail)
+
+	if !strings.Contains(printed, "nacking to DLQ") {
+		t.Errorf("printed %q, want a line nacking to DLQ", printed)
+	}
+}
+
+func TestRabbitContextFailWithRetriesLeftLogsNoDLQ(t *testing.T) {
+	ctx := NewContextWithRetry(&mockDelivery{}, &mockRetryPublisher{}, "myqueue_retry", 0, 3, "myapp_dlq", 1000, "fixed")
+	ctx.DeliveryStruct = DeliveryStruct{Body: []byte(`{}`)}
+
+	printed := captureStdout(t, ctx.Fail)
+
+	if strings.Contains(printed, "nacking to DLQ") {
+		t.Errorf("printed %q, want no DLQ line while retries remain", printed)
 	}
 }
